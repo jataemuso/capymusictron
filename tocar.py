@@ -59,3 +59,7 @@ def tocarmusica(musica):
     # Iniciar o bot
     client.run(TOKEN)
 
+
+if __name__ == "__main__":
+    tocarmusica("downloads/Matthew.mp3")
+
