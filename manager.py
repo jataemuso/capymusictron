@@ -1,8 +1,27 @@
 import time
 import json
+import os
+import shutil
+import subprocess
 from tocar import tocarmusica
 
 QUEUE_FILE = 'music_queue.json'
+DOWNLOADS_FOLDER = 'downloads'
+
+def limpar_arquivos_iniciais():
+    # Apaga a pasta de downloads se ela existir
+    if os.path.exists(DOWNLOADS_FOLDER):
+        shutil.rmtree(DOWNLOADS_FOLDER)  # Apaga a pasta de downloads e seu conteúdo
+        print("Pasta de downloads apagada.")
+    
+    # Apaga o arquivo music_queue.json se ele existir
+    if os.path.exists(QUEUE_FILE):
+        os.remove(QUEUE_FILE)
+        print("Arquivo music_queue.json apagado.")
+
+def iniciar_quee():
+    # Executa o script quee.py em segundo plano
+    subprocess.Popen(['python', 'quee.py'])
 
 def verificar_e_tocar():
     print("Iniciando o gerenciador de músicas...")
@@ -37,4 +56,11 @@ def verificar_e_tocar():
         time.sleep(2)
 
 if __name__ == "__main__":
+    # Limpa os arquivos e pastas iniciais
+    limpar_arquivos_iniciais()
+
+    # Inicia o script quee.py em segundo plano
+    iniciar_quee()
+
+    # Inicia o gerenciamento e a verificação da fila
     verificar_e_tocar()
