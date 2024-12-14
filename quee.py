@@ -41,40 +41,41 @@ async def play(ctx, *, search: str):
 
     # Configurações do yt-dlp
     ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': 'downloads/%(title)s.%(ext)s',  # Apenas título e extensão para facilitar
-        'noplaylist': True,
+        'format': 'bestaudio/best',  # Baixa somente o áudio
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',  # Extrai apenas o áudio do arquivo
+            'preferredcodec': 'mp3',      # Escolha o formato final (mp3, m4a, etc.)
+            'preferredquality': '192',    # Qualidade do áudio
+        }],
+        'outtmpl': 'downloads/%(title)s.%(ext)s',  # Salva o arquivo com o nome correto
         'quiet': True,
-        'default_search': 'ytsearch',  # Busca no YouTube automaticamente
+        'default_search': 'ytsearch',
+        'noplaylist': False,  # Permite buscar playlists
+        'progress_hooks': [lambda d: on_download_complete(d, ctx)],  # Função ao concluir
     }
+
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            # Extrai informações da música e realiza o download
+            # Extrai informações da música ou playlist
             info = ydl.extract_info(search, download=True)
 
-            # Aguarda alguns segundos para garantir que o arquivo tenha sido completamente baixado
-            time.sleep(2)
+            # Se for uma playlist, itera sobre cada item da playlist e faz o download
+            if 'entries' in info:
+                for entry in info['entries']:
+                    url = entry.get('url', search)
+                    title = entry.get('title', 'Unknown Title')
 
-            # Agora vamos verificar na pasta de downloads qual arquivo foi gerado
-            folder = 'downloads'
-            files_in_folder = os.listdir(folder)
-            expected_files = [f for f in files_in_folder if f.lower().startswith(info['title'].lower())]
+                    # Realiza o download
+                    ydl.download([url])  # Baixa a música
 
-            # Verifica se encontramos um arquivo que começa com o título da música e tem a extensão certa
-            if expected_files:
-                # Pega o arquivo mais recente ou o primeiro encontrado
-                filepath = os.path.join(folder, expected_files[0])
             else:
-                # Caso não encontre um arquivo esperado, usa um caminho genérico
-                filepath = f"{folder}/{info['title']}.NA"
+                # Caso não seja uma playlist, realiza o download de um único item
+                url = info.get('webpage_url', search)
+                title = info.get('title', 'Unknown Title')
 
-            title = info.get('title', 'Unknown Title')
-            url = info.get('webpage_url', search)
-
-            # Adiciona à fila
-            add_to_queue(title, url, filepath)
-            await ctx.send(f'Adicionado à fila: **{title}**')
+                # Realiza o download
+                ydl.download([url])  # Baixa a música
 
         except KeyError as e:
             print(f"Erro ao baixar música: Chave ausente {e}")
@@ -82,6 +83,18 @@ async def play(ctx, *, search: str):
         except Exception as e:
             print(f"Erro ao baixar música: {e}")
             await ctx.send(f"Ocorreu um erro ao baixar a música: {e}")
+
+def on_download_complete(d, ctx):
+    if d['status'] == 'finished':
+        title = d.get('title', 'Unknown Title')
+        url = d.get('url', 'Unknown URL')
+        filepath = d.get('filename', 'Unknown Path')
+
+        # Adiciona à fila após o download
+        add_to_queue(title, url, filepath)
+        ctx.send(f'Adicionado à fila: **{title}**')
+
+
 
 @bot.command(name='queue')
 async def show_queue(ctx):

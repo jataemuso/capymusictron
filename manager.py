@@ -8,6 +8,10 @@ from tocar import tocarmusica
 QUEUE_FILE = 'music_queue.json'
 DOWNLOADS_FOLDER = 'downloads'
 
+# Variáveis globais para o controle do voice_client e a música tocando
+voice_client = None
+musica_atual = None
+
 def limpar_arquivos_iniciais():
     # Apaga a pasta de downloads se ela existir
     if os.path.exists(DOWNLOADS_FOLDER):
@@ -23,7 +27,22 @@ def iniciar_quee():
     # Executa o script quee.py em segundo plano
     subprocess.Popen(['python', 'quee.py'])
 
+def parar_musica_e_pular():
+    global voice_client, musica_atual
+
+    if voice_client and voice_client.is_playing():
+        voice_client.stop()  # Para a música atual
+        print(f'Música {musica_atual["title"]} foi parada.')
+
+    # Começa a tocar a próxima música
+    if musica_atual:
+        musica_atual = None  # Reseta a música atual
+        print('Pulando para a próxima música.')
+        verificar_e_tocar()  # Verifica a fila e toca a próxima música
+
 def verificar_e_tocar():
+    global musica_atual
+
     print("Iniciando o gerenciador de músicas...")
     ultima_fila = []
 
@@ -34,8 +53,8 @@ def verificar_e_tocar():
 
             # Verifica se há novas músicas na fila
             if fila_atual and (fila_atual != ultima_fila):
-                # Toca a primeira música na fila
                 musica = fila_atual.pop(0)
+                musica_atual = musica  # Atualiza a música que está tocando
                 print(f"Tocando música: {musica['title']}")
                 tocarmusica(musica["filepath"])
 
