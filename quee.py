@@ -4,6 +4,7 @@ import yt_dlp
 import json
 import os
 import random
+import asyncio
 import time
 
 # Configurações iniciais do bot
@@ -41,59 +42,42 @@ async def play(ctx, *, search: str):
 
     # Configurações do yt-dlp
     ydl_opts = {
-        'format': 'bestaudio/best',  # Baixa somente o áudio
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',  # Extrai apenas o áudio do arquivo
-            'preferredcodec': 'mp3',      # Escolha o formato final (mp3, m4a, etc.)
-            'preferredquality': '192',    # Qualidade do áudio
-        }],
-        'outtmpl': 'downloads/%(title)s.%(ext)s',  # Salva o arquivo com o nome correto
+        'format': 'bestaudio[ext=webp]/bestaudio',  # Apenas áudio
+        'outtmpl': 'downloads/%(title)s.%(ext)s',  # Caminho de saída
         'quiet': True,
-        'default_search': 'ytsearch',
-        'noplaylist': False,  # Permite buscar playlists
-        'progress_hooks': [lambda d: on_download_complete(d, ctx)],  # Função ao concluir
+        'default_search': 'ytsearch',  # Busca no YouTube automaticamente
+        'noplaylist': False,  # Permite o download da playlist
+        'progress_hooks': [lambda d: asyncio.run_coroutine_threadsafe(on_download_complete(d, ctx), bot.loop)]  # Chama função ao finalizar download
     }
-
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            # Extrai informações da música ou playlist
+            # Extrai informações da música
             info = ydl.extract_info(search, download=True)
 
-            # Se for uma playlist, itera sobre cada item da playlist e faz o download
-            if 'entries' in info:
+            if 'entries' in info:  # Playlist detectada
                 for entry in info['entries']:
-                    url = entry.get('url', search)
                     title = entry.get('title', 'Unknown Title')
-
-                    # Realiza o download
-                    ydl.download([url])  # Baixa a música
-
-            else:
-                # Caso não seja uma playlist, realiza o download de um único item
-                url = info.get('webpage_url', search)
+                    await ctx.send(f'Baixado: **{title}**')
+            else:  # Apenas um item detectado
                 title = info.get('title', 'Unknown Title')
+                await ctx.send(f'Baixado: **{title}**')
 
-                # Realiza o download
-                ydl.download([url])  # Baixa a música
-
-        except KeyError as e:
-            print(f"Erro ao baixar música: Chave ausente {e}")
-            await ctx.send(f"Ocorreu um erro ao baixar a música: Chave ausente {e}")
         except Exception as e:
             print(f"Erro ao baixar música: {e}")
             await ctx.send(f"Ocorreu um erro ao baixar a música: {e}")
 
-def on_download_complete(d, ctx):
+# Função de callback para quando o download for concluído
+# Função de callback para quando o download for concluído
+async def on_download_complete(d, ctx):
     if d['status'] == 'finished':
-        title = d.get('title', 'Unknown Title')
-        url = d.get('url', 'Unknown URL')
-        filepath = d.get('filename', 'Unknown Path')
+        # Obtém o título e o caminho do arquivo corretamente
+        title = d.get('info_dict', {}).get('title', 'Título desconhecido')
+        filepath = d.get('filename', 'Caminho desconhecido')  # Usa 'filename' diretamente do progresso
 
-        # Adiciona à fila após o download
-        add_to_queue(title, url, filepath)
-        ctx.send(f'Adicionado à fila: **{title}**')
-
+        # Adiciona à fila e envia mensagem
+        add_to_queue(title, d['info_dict'].get('webpage_url', 'URL desconhecida'), filepath)
+        await ctx.send(f'Adicionado à fila: **{title}**\nArquivo: `{filepath}`')
 
 
 @bot.command(name='queue')

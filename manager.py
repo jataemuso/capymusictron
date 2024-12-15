@@ -8,9 +8,9 @@ from tocar import tocarmusica
 QUEUE_FILE = 'music_queue.json'
 DOWNLOADS_FOLDER = 'downloads'
 
-# Variáveis globais para o controle do voice_client e a música tocando
-voice_client = None
+# Variáveis globais para o controle da música atual
 musica_atual = None
+tocando = False  # Indicador se uma música está sendo tocada
 
 def limpar_arquivos_iniciais():
     # Apaga a pasta de downloads se ela existir
@@ -28,20 +28,25 @@ def iniciar_quee():
     subprocess.Popen(['python', 'quee.py'])
 
 def parar_musica_e_pular():
-    global voice_client, musica_atual
+    """
+    Para a música atual e pula para a próxima da fila.
+    """
+    global musica_atual, tocando
 
-    if voice_client and voice_client.is_playing():
-        voice_client.stop()  # Para a música atual
-        print(f'Música {musica_atual["title"]} foi parada.')
-
-    # Começa a tocar a próxima música
-    if musica_atual:
+    if tocando:
+        print(f"Parando música: {musica_atual['title']}")
+        tocando = False  # Sinaliza que a música foi interrompida
         musica_atual = None  # Reseta a música atual
-        print('Pulando para a próxima música.')
-        verificar_e_tocar()  # Verifica a fila e toca a próxima música
+
+    # Chama a próxima música na fila
+    print("Pulando para a próxima música...")
+    verificar_e_tocar()  # Continua verificando a fila para a próxima música
 
 def verificar_e_tocar():
-    global musica_atual
+    """
+    Verifica a fila de músicas e toca a próxima música disponível.
+    """
+    global musica_atual, tocando
 
     print("Iniciando o gerenciador de músicas...")
     ultima_fila = []
@@ -53,17 +58,25 @@ def verificar_e_tocar():
 
             # Verifica se há novas músicas na fila
             if fila_atual and (fila_atual != ultima_fila):
-                musica = fila_atual.pop(0)
-                musica_atual = musica  # Atualiza a música que está tocando
-                print(f"Tocando música: {musica['title']}")
-                tocarmusica(musica["filepath"])
+                if not tocando:  # Só toca uma nova música se nenhuma estiver tocando
+                    musica = fila_atual.pop(0)
+                    musica_atual = musica  # Atualiza a música que está tocando
+                    print(f"Tocando música: {musica['title']}")
+                    tocando = True  # Sinaliza que a música está tocando
 
-                # Atualiza a fila no JSON
-                with open(QUEUE_FILE, 'w') as f:
-                    json.dump(fila_atual, f, indent=4)
+                    # Atualiza a fila no JSON
+                    with open(QUEUE_FILE, 'w') as f:
+                        json.dump(fila_atual, f, indent=4)
 
-                # Atualiza a referência da última fila
-                ultima_fila = fila_atual
+                    # Chama a função para tocar música (bloqueante até a música terminar ou ser parada)
+                    tocarmusica(musica["filepath"])
+                    
+                    # Música terminou naturalmente
+                    tocando = False
+                    musica_atual = None
+                    print(f"Música {musica['title']} terminou.")
+                else:
+                    print(f"Já está tocando uma música: {musica_atual['title']}")
             else:
                 # Atualiza referência mesmo sem mudanças, para evitar comparações inválidas
                 ultima_fila = fila_atual
