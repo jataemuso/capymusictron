@@ -29,6 +29,7 @@ def gerar_radio(nome_musica):
     print("\nRádio automática sugerida:")
     for idx, track in enumerate(radio_playlist['tracks'], start=1):
         print(f"{idx}. {track['title']} - {track['artists'][0]['name']}")
+    return radio_playlist
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
