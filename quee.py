@@ -6,6 +6,8 @@ import os
 import random
 import asyncio
 import shutil
+from radio import gerar_radio
+from playlist_extrator import get_playlist_titles
 
 # Configurações iniciais do bot
 TOKEN = "MTMxNzUyOTQyOTMwMzYyNzg4OA.GRGhcx.JAV-k0Nkp7-bcPFkgHUxUKiVTcZRyqFoJEHQbc"  # Use uma variável de ambiente para o token
@@ -38,6 +40,10 @@ async def on_ready():
 
 @bot.command(name='play')
 async def play(ctx, *, search: str):
+    if 'playlist' in search:
+        
+
+
     await ctx.send(f'Pesquisando por: {search}...')
 
     # Configurações do yt-dlp
@@ -205,6 +211,18 @@ async def move_song(ctx, from_index: int, to_index: int):
         json.dump(queue, f, indent=4)
 
     await ctx.send(f'Movido: **{song["title"]}** para a posição {to_index}')
+
+@bot.command(name='radio')
+async def criar_radio(ctx, *, search: str):
+    await ctx.send(f'Pesquisando radio: {search}...')
+    radio_playlist = gerar_radio(search)
+    
+
+    for music in radio_playlist["tracks"]:
+        title = music["title"]
+        await play(ctx, search=title)
+
+
 
 # Inicia o bot
 if TOKEN is None:
