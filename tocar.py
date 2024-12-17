@@ -4,7 +4,7 @@ import asyncio
 def tocarmusica(musica):
 
     TOKEN = "MTEwMDU2MTU3MjgzMDY1MDM4MQ.G3nlO6.7dvZJj66z1fpTxtDj436N-mxPVrOx4g5abCBmM"
-    CANAL_VOZ_ID = 1097958896930398348  # Substitua pelo ID do canal de voz desejado
+    CANAL_VOZ_ID = 1229598659230830592  # Substitua pelo ID do canal de voz desejado
 
     # Inicialize o cliente do Discord
     client = discord.Client(intents=discord.Intents.all())

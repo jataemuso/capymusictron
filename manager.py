@@ -69,12 +69,15 @@ def verificar_e_tocar():
                         json.dump(fila_atual, f, indent=4)
 
                     # Chama a função para tocar música (bloqueante até a música terminar ou ser parada)
+                    path_musica_atual = musica["filepath"]
                     tocarmusica(musica["filepath"])
                     
                     # Música terminou naturalmente
                     tocando = False
                     musica_atual = None
                     print(f"Música {musica['title']} terminou.")
+                    print(path_musica_atual)
+                    os.remove(path_musica_atual)
                 else:
                     print(f"Já está tocando uma música: {musica_atual['title']}")
             else:
