@@ -9,6 +9,32 @@ import shutil
 from radio import gerar_radio
 from playlist_extrator import get_playlist_titles
 
+# Função para monitorar o fim da música
+import time
+
+async def monitorar_fim_musica():
+    while True:
+        if os.path.exists("musica_fim.json"):
+            with open("musica_fim.json", "r") as f:
+                data = json.load(f)
+
+            if data.get("status") == "terminou":
+                print("Música finalizada! Executando ação...")
+                await executar_funcao_desejada()
+
+                # Remove ou atualiza o status no arquivo
+                data["status"] = "iniciado"  # Ou qualquer outro valor que você queira para indicar que a ação foi processada
+                with open("musica_fim.json", "w") as f:
+                    json.dump(data, f, indent=4)
+                print("Status atualizado no arquivo musica_fim.json.")
+        
+        await asyncio.sleep(1)  # Verifica a cada 1 segundo
+
+
+async def executar_funcao_desejada():
+    print("Função dentro do quee executada com sucesso!")
+    
+
 # Configurações iniciais do bot
 TOKEN = "***REMOVED***"  # Use uma variável de ambiente para o token
 PREFIX = '!'
@@ -37,6 +63,9 @@ def add_to_queue(title, url, filepath):
 @bot.event
 async def on_ready():
     print(f'{bot.user} está online e pronto para uso!')
+    
+    # Inicia a tarefa assíncrona para monitorar o fim da música
+    bot.loop.create_task(monitorar_fim_musica())
 
 @bot.command(name='play')
 async def play(ctx, *, search: str):
@@ -44,12 +73,8 @@ async def play(ctx, *, search: str):
         playlist = get_playlist_titles(search)
         for musica in playlist:
             await play(ctx, search=musica)
-
     else:
-        
         await ctx.send(f'Pesquisando por: {search}...')
-
-        # Configurações do yt-dlp
         ydl_opts = {
             'format': 'bestaudio[ext=webp]/bestaudio',  # Apenas áudio
             'outtmpl': 'downloads/%(title)s.%(ext)s',  # Caminho de saída
@@ -63,7 +88,6 @@ async def play(ctx, *, search: str):
             try:
                 # Extrai informações da música
                 info = ydl.extract_info(search, download=True)
-
                 if 'entries' in info:  # Playlist detectada
                     for entry in info['entries']:
                         title = entry.get('title', 'Unknown Title')
@@ -88,17 +112,13 @@ async def on_download_complete(d, ctx):
         add_to_queue(title, url, filepath)
         await ctx.send(f'Adicionado à fila: **{title}**\nArquivo: `{filepath}`')
 
-
 # Função de callback para quando o download for concluído
 async def on_download_complete_next(d, ctx):
     if d['status'] == 'finished':
-        # Obtém o título e o caminho do arquivo corretamente
         title = d.get('info_dict', {}).get('title', 'Título desconhecido')
         url = d.get('info_dict', {}).get('webpage_url', 'URL desconhecida')
-        filepath = d.get('filename', 'Caminho desconhecido')  # Usa 'filename' diretamente do progresso
+        filepath = d.get('filename', 'Caminho desconhecido')
 
-        # Adiciona à fila e envia mensagem
-        # add_to_queue(title, url, filepath)
         with open(QUEUE_FILE, 'r') as f:
             queue = json.load(f)
 
@@ -108,7 +128,6 @@ async def on_download_complete_next(d, ctx):
             json.dump(queue, f, indent=4)
 
         await ctx.send(f'Adicionado à fila: **{title}**\nArquivo: `{filepath}`')
-
 
 @bot.command(name='queue')
 async def show_queue(ctx):
@@ -224,8 +243,6 @@ async def criar_radio(ctx, *, search: str):
     for music in radio_playlist["tracks"]:
         title = music["title"]
         await play(ctx, search=title)
-
-
 
 # Inicia o bot
 if TOKEN is None:

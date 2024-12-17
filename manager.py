@@ -42,6 +42,13 @@ def parar_musica_e_pular():
     print("Pulando para a próxima música...")
     verificar_e_tocar()  # Continua verificando a fila para a próxima música
 
+def notificar_fim_musica():
+    with open("musica_fim.json", "w") as f:
+        json.dump({"status": "terminou"}, f)
+    print("Notificação: Música terminou! Sinal enviado para o quee.")
+    time.sleep(2)
+
+
 def verificar_e_tocar():
     """
     Verifica a fila de músicas e toca a próxima música disponível.
@@ -73,6 +80,7 @@ def verificar_e_tocar():
                     tocarmusica(musica["filepath"])
                     
                     # Música terminou naturalmente
+                    notificar_fim_musica()
                     tocando = False
                     musica_atual = None
                     print(f"Música {musica['title']} terminou.")
