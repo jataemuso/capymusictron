@@ -13,7 +13,7 @@ import queue
 # Função para monitorar o fim da música
 import time
 
-async def monitorar_fim_musica():
+async def gatekeeper():
     while True:
         if os.path.exists("music_queue.json"):
             with open("music_queue.json", "r") as f:
@@ -29,11 +29,6 @@ async def monitorar_fim_musica():
         
         await asyncio.sleep(1)  # Verifica a cada 1 segundo
 
-
-async def executar_funcao_desejada():
-    #fim da musica
-    pass
-    
 
 # Configurações iniciais do bot
 TOKEN = "MTMxNzUyOTQyOTMwMzYyNzg4OA.GRGhcx.JAV-k0Nkp7-bcPFkgHUxUKiVTcZRyqFoJEHQbc"  # Use uma variável de ambiente para o token
@@ -65,7 +60,7 @@ async def on_ready():
     print(f'{bot.user} está online e pronto para uso!')
     
     # Inicia a tarefa assíncrona para monitorar o fim da música
-    bot.loop.create_task(monitorar_fim_musica())
+    bot.loop.create_task(gatekeeper())
 
 FILA = asyncio.Queue()
 @bot.command(name='play')
@@ -142,10 +137,17 @@ async def show_queue(ctx):
     if not queue:
         await ctx.send('A fila está vazia.')
     else:
+        idx = 1
         message = 'Fila de músicas:\n'
-        for idx, song in enumerate(queue):
+        for song in queue:
             message += f'{idx + 1}. {song["title"]} ({song["url"]})\n'
+            idx += 1
+        for song in FILA:
+            message += f'{idx + 1}. {song["title"]} ({song["url"]})\n'
+            idx += 1
         await ctx.send(message)
+    
+
 
 @bot.command(name='clear', aliases=['stop'])
 async def clear_queue(ctx):
