@@ -1,5 +1,6 @@
 import discord
 import asyncio
+import time
 
 def tocarmusica(musica):
 
@@ -74,7 +75,9 @@ def tocarmusica(musica):
             return
 
         # Comando !skip
-        if message.content.lower() == "!skip":
+        if message.content.lower() in ["!skip", "!stop"]:
+            if message.content.lower() == "!stop":
+                time.sleep(2)
             stop_playback = True  # Ativa o sinalizador para interromper a reprodução
             await message.channel.send("Música interrompida pelo comando !skip.")
 

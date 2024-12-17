@@ -8,31 +8,31 @@ import asyncio
 import shutil
 from radio import gerar_radio
 from playlist_extrator import get_playlist_titles
+import queue
 
 # Função para monitorar o fim da música
 import time
 
 async def monitorar_fim_musica():
     while True:
-        if os.path.exists("musica_fim.json"):
-            with open("musica_fim.json", "r") as f:
+        if os.path.exists("music_queue.json"):
+            with open("music_queue.json", "r") as f:
                 data = json.load(f)
 
-            if data.get("status") == "terminou":
+            if len(data) < 5:
                 print("Música finalizada! Executando ação...")
-                await executar_funcao_desejada()
-
-                # Remove ou atualiza o status no arquivo
-                data["status"] = "iniciado"  # Ou qualquer outro valor que você queira para indicar que a ação foi processada
-                with open("musica_fim.json", "w") as f:
-                    json.dump(data, f, indent=4)
-                print("Status atualizado no arquivo musica_fim.json.")
+                search = await FILA.get()
+                channel = bot.get_channel(1097958896930398348)  # Não questione!
+                ctx = await bot.get_context(await channel.send("Próxima música..."))
+                await reproduce(ctx, search=search)
+                print(FILA)
         
         await asyncio.sleep(1)  # Verifica a cada 1 segundo
 
 
 async def executar_funcao_desejada():
-    print("Função dentro do quee executada com sucesso!")
+    #fim da musica
+    pass
     
 
 # Configurações iniciais do bot
@@ -67,38 +67,43 @@ async def on_ready():
     # Inicia a tarefa assíncrona para monitorar o fim da música
     bot.loop.create_task(monitorar_fim_musica())
 
+FILA = asyncio.Queue()
 @bot.command(name='play')
 async def play(ctx, *, search: str):
     if 'playlist' in search:
         playlist = get_playlist_titles(search)
         for musica in playlist:
-            await play(ctx, search=musica)
+            await FILA.put(musica)
     else:
-        await ctx.send(f'Pesquisando por: {search}...')
-        ydl_opts = {
-            'format': 'bestaudio[ext=webp]/bestaudio',  # Apenas áudio
-            'outtmpl': 'downloads/%(title)s.%(ext)s',  # Caminho de saída
-            'quiet': True,
-            'default_search': 'ytsearch',  # Busca no YouTube automaticamente
-            'noplaylist': False,  # Permite o download da playlist
-            'progress_hooks': [lambda d: asyncio.run_coroutine_threadsafe(on_download_complete(d, ctx), bot.loop)]  # Chama função ao finalizar download
-        }
+        await FILA.put(search)
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                # Extrai informações da música
-                info = ydl.extract_info(search, download=True)
-                if 'entries' in info:  # Playlist detectada
-                    for entry in info['entries']:
-                        title = entry.get('title', 'Unknown Title')
-                        await ctx.send(f'Baixado: **{title}**')
-                else:  # Apenas um item detectado
-                    title = info.get('title', 'Unknown Title')
+
+async def reproduce(ctx, *, search: str):
+    await ctx.send(f'Pesquisando por: {search}...')
+    ydl_opts = {
+        'format': 'bestaudio[ext=webp]/bestaudio',  # Apenas áudio
+        'outtmpl': 'downloads/%(title)s.%(ext)s',  # Caminho de saída
+        'quiet': True,
+        'default_search': 'ytsearch',  # Busca no YouTube automaticamente
+        'noplaylist': False,  # Permite o download da playlist
+        'progress_hooks': [lambda d: asyncio.run_coroutine_threadsafe(on_download_complete(d, ctx), bot.loop)]  # Chama função ao finalizar download
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            # Extrai informações da música
+            info = ydl.extract_info(search, download=True)
+            if 'entries' in info:  # Playlist detectada
+                for entry in info['entries']:
+                    title = entry.get('title', 'Unknown Title')
                     await ctx.send(f'Baixado: **{title}**')
+            else:  # Apenas um item detectado
+                title = info.get('title', 'Unknown Title')
+                await ctx.send(f'Baixado: **{title}**')
 
-            except Exception as e:
-                print(f"Erro ao baixar música: {e}")
-                await ctx.send(f"Ocorreu um erro ao baixar a música: {e}")
+        except Exception as e:
+            print(f"Erro ao baixar música: {e}")
+            await ctx.send(f"Ocorreu um erro ao baixar a música: {e}")
 
 # Função de callback para quando o download for concluído
 async def on_download_complete(d, ctx):
@@ -142,8 +147,10 @@ async def show_queue(ctx):
             message += f'{idx + 1}. {song["title"]} ({song["url"]})\n'
         await ctx.send(message)
 
-@bot.command(name='clear')
+@bot.command(name='clear', aliases=['stop'])
 async def clear_queue(ctx):
+    while not FILA.empty():  # Enquanto a fila não estiver vazia
+        await FILA.get()     # Remove um item da fila
     with open(QUEUE_FILE, 'w') as f:
         json.dump([], f)
     try:
@@ -242,7 +249,7 @@ async def criar_radio(ctx, *, search: str):
 
     for music in radio_playlist["tracks"]:
         title = music["title"]
-        await play(ctx, search=title)
+        await FILA.put(title)
 
 # Inicia o bot
 if TOKEN is None:
