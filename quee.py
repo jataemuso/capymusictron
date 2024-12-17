@@ -41,37 +41,40 @@ async def on_ready():
 @bot.command(name='play')
 async def play(ctx, *, search: str):
     if 'playlist' in search:
+        playlist = get_playlist_titles(search)
+        for musica in playlist:
+            await play(ctx, search=musica)
+
+    else:
         
+        await ctx.send(f'Pesquisando por: {search}...')
 
+        # Configurações do yt-dlp
+        ydl_opts = {
+            'format': 'bestaudio[ext=webp]/bestaudio',  # Apenas áudio
+            'outtmpl': 'downloads/%(title)s.%(ext)s',  # Caminho de saída
+            'quiet': True,
+            'default_search': 'ytsearch',  # Busca no YouTube automaticamente
+            'noplaylist': False,  # Permite o download da playlist
+            'progress_hooks': [lambda d: asyncio.run_coroutine_threadsafe(on_download_complete(d, ctx), bot.loop)]  # Chama função ao finalizar download
+        }
 
-    await ctx.send(f'Pesquisando por: {search}...')
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            try:
+                # Extrai informações da música
+                info = ydl.extract_info(search, download=True)
 
-    # Configurações do yt-dlp
-    ydl_opts = {
-        'format': 'bestaudio[ext=webp]/bestaudio',  # Apenas áudio
-        'outtmpl': 'downloads/%(title)s.%(ext)s',  # Caminho de saída
-        'quiet': True,
-        'default_search': 'ytsearch',  # Busca no YouTube automaticamente
-        'noplaylist': False,  # Permite o download da playlist
-        'progress_hooks': [lambda d: asyncio.run_coroutine_threadsafe(on_download_complete(d, ctx), bot.loop)]  # Chama função ao finalizar download
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            # Extrai informações da música
-            info = ydl.extract_info(search, download=True)
-
-            if 'entries' in info:  # Playlist detectada
-                for entry in info['entries']:
-                    title = entry.get('title', 'Unknown Title')
+                if 'entries' in info:  # Playlist detectada
+                    for entry in info['entries']:
+                        title = entry.get('title', 'Unknown Title')
+                        await ctx.send(f'Baixado: **{title}**')
+                else:  # Apenas um item detectado
+                    title = info.get('title', 'Unknown Title')
                     await ctx.send(f'Baixado: **{title}**')
-            else:  # Apenas um item detectado
-                title = info.get('title', 'Unknown Title')
-                await ctx.send(f'Baixado: **{title}**')
 
-        except Exception as e:
-            print(f"Erro ao baixar música: {e}")
-            await ctx.send(f"Ocorreu um erro ao baixar a música: {e}")
+            except Exception as e:
+                print(f"Erro ao baixar música: {e}")
+                await ctx.send(f"Ocorreu um erro ao baixar a música: {e}")
 
 # Função de callback para quando o download for concluído
 async def on_download_complete(d, ctx):
