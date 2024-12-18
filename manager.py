@@ -99,11 +99,6 @@ def verificar_e_tocar():
         time.sleep(2)
 
 if __name__ == "__main__":
-    # Limpa os arquivos e pastas iniciais
     limpar_arquivos_iniciais()
-
-    # Inicia o script quee.py em segundo plano
     iniciar_quee()
-
-    # Inicia o gerenciamento e a verificação da fila
     verificar_e_tocar()

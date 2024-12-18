@@ -5,7 +5,7 @@ import time
 def tocarmusica(musica):
 
     TOKEN = "***REMOVED***"
-    CANAL_VOZ_ID = 1229598659230830592  # Substitua pelo ID do canal de voz desejado
+    CANAL_VOZ_ID = 1097958896930398348  # Substitua pelo ID do canal de voz desejado
 
     # Inicialize o cliente do Discord
     client = discord.Client(intents=discord.Intents.all())
@@ -85,4 +85,4 @@ def tocarmusica(musica):
     client.run(TOKEN)
 
 if __name__ == "__main__":
-    tocarmusica("downloads/Shrek.webm")
+    tocarmusica("downloads/2Pac - All Eyez On Me.webm")

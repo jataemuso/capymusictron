@@ -137,13 +137,14 @@ async def show_queue(ctx):
     if not queue:
         await ctx.send('A fila está vazia.')
     else:
-        idx = 1
+        idx = 0
         message = 'Fila de músicas:\n'
         for song in queue:
-            message += f'{idx + 1}. {song["title"]} ({song["url"]})\n'
+            message += f'{idx + 1}. {song["title"]}\n'
             idx += 1
-        for song in FILA:
-            message += f'{idx + 1}. {song["title"]} ({song["url"]})\n'
+        temp_fila = list(FILA._queue)
+        for song in temp_fila:
+            message += f'{idx + 1}. {song}\n'
             idx += 1
         await ctx.send(message)
     
@@ -156,24 +157,33 @@ async def clear_queue(ctx):
     with open(QUEUE_FILE, 'w') as f:
         json.dump([], f)
     try:
-        shutil.rmtree()
+        shutil.rmtree("/downloads")
     except:
         pass
     await ctx.send('A fila foi limpa.')
 
 @bot.command(name='shuffle')
 async def shuffle_queue(ctx):
+
     with open(QUEUE_FILE, 'r') as f:
         queue = json.load(f)
+    for music in queue:
+        await FILA.put(music["title"])
 
-    if not queue:
-        await ctx.send('A fila está vazia, não há nada para embaralhar.')
-        return
+    FILA_lista = list(FILA._queue)
 
-    random.shuffle(queue)
+    random.shuffle(FILA_lista)
+
+    while not FILA.empty():  # Enquanto a fila não estiver vazia
+        await FILA.get()     # Remove um item da fila
+
+    for music in FILA_lista:
+        await FILA.put(music)
 
     with open(QUEUE_FILE, 'w') as f:
-        json.dump(queue, f, indent=4)
+        json.dump([], f)
+    if os.path.exists("downloads"):
+        shutil.rmtree("downloads")
 
     await ctx.send('A fila foi embaralhada.')
 
