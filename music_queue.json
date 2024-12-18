@@ -1,1 +1,22 @@
-[]
+[
+    {
+        "title": "1985",
+        "url": "https://www.youtube.com/watch?v=2rHRztFGOm8",
+        "filepath": "downloads\\1985.webm"
+    },
+    {
+        "title": "2Pac - All Eyez On Me",
+        "url": "https://www.youtube.com/watch?v=H1HdZFgR-aA",
+        "filepath": "downloads\\2Pac - All Eyez On Me.webm"
+    },
+    {
+        "title": "Numb (Official Music Video) [4K UPGRADE] \u2013 Linkin Park",
+        "url": "https://www.youtube.com/watch?v=kXYiU_JCYtU",
+        "filepath": "downloads\\Numb (Official Music Video) [4K UPGRADE] \u2013 Linkin Park.webm"
+    },
+    {
+        "title": "twenty one pilots: Heathens (from Suicide Squad: The Album) [OFFICIAL VIDEO]",
+        "url": "https://www.youtube.com/watch?v=UprcpdwuwCg",
+        "filepath": "downloads\\twenty one pilots\uff1a Heathens (from Suicide Squad\uff1a The Album) [OFFICIAL VIDEO].webm"
+    }
+]
