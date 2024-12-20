@@ -20,10 +20,9 @@ async def gatekeeper():
                 data = json.load(f)
 
             if len(data) < 5:
-                print("Música finalizada! Executando ação...")
                 search = await FILA.get()
-                channel = bot.get_channel(1097958896930398348)  # Não questione!
-                ctx = await bot.get_context(await channel.send("Próxima música..."))
+                channel = bot.get_channel(1097966285419204649)  # Canal de notificações, vulgo: dj-capybraine
+                ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))  # Baseia-se em mensagem fixa
                 await reproduce(ctx, search=search)
                 print(FILA)
         
@@ -65,6 +64,7 @@ async def on_ready():
 FILA = asyncio.Queue()
 @bot.command(name='play')
 async def play(ctx, *, search: str):
+    await ctx.send(f'Pesquisando por: {search}...')
     if 'playlist' in search:
         playlist = get_playlist_titles(search)
         for musica in playlist:
@@ -74,7 +74,7 @@ async def play(ctx, *, search: str):
 
 
 async def reproduce(ctx, *, search: str):
-    await ctx.send(f'Pesquisando por: {search}...')
+    #await ctx.send(f'Pesquisando por: {search}...')
     ydl_opts = {
         'format': 'bestaudio[ext=webp]/bestaudio',  # Apenas áudio
         'outtmpl': 'downloads/%(title)s.%(ext)s',  # Caminho de saída
@@ -91,10 +91,10 @@ async def reproduce(ctx, *, search: str):
             if 'entries' in info:  # Playlist detectada
                 for entry in info['entries']:
                     title = entry.get('title', 'Unknown Title')
-                    await ctx.send(f'Baixado: **{title}**')
+                    #await ctx.send(f'Baixado: **{title}**')
             else:  # Apenas um item detectado
                 title = info.get('title', 'Unknown Title')
-                await ctx.send(f'Baixado: **{title}**')
+                #await ctx.send(f'Baixado: **{title}**')
 
         except Exception as e:
             print(f"Erro ao baixar música: {e}")
@@ -110,7 +110,7 @@ async def on_download_complete(d, ctx):
 
         # Adiciona à fila e envia mensagem
         add_to_queue(title, url, filepath)
-        await ctx.send(f'Adicionado à fila: **{title}**\nArquivo: `{filepath}`')
+        #await ctx.send(f'Adicionado à fila: **{title}**\nArquivo: `{filepath}`')
 
 # Função de callback para quando o download for concluído
 async def on_download_complete_next(d, ctx):
@@ -127,7 +127,7 @@ async def on_download_complete_next(d, ctx):
         with open(QUEUE_FILE, 'w') as f:
             json.dump(queue, f, indent=4)
 
-        await ctx.send(f'Adicionado à fila: **{title}**\nArquivo: `{filepath}`')
+        #await ctx.send(f'Adicionado à fila: **{title}**\nArquivo: `{filepath}`')
 
 @bot.command(name='queue')
 async def show_queue(ctx):
@@ -136,17 +136,39 @@ async def show_queue(ctx):
 
     if not queue:
         await ctx.send('A fila está vazia.')
-    else:
-        idx = 0
-        message = 'Fila de músicas:\n'
-        for song in queue:
-            message += f'{idx + 1}. {song["title"]}\n'
-            idx += 1
-        temp_fila = list(FILA._queue)
-        for song in temp_fila:
-            message += f'{idx + 1}. {song}\n'
-            idx += 1
-        await ctx.send(message)
+        return
+
+    idx = 0
+    messages = []  # Lista para armazenar as mensagens divididas
+    current_message = 'Fila de músicas:\n'
+
+    # Adiciona músicas da fila armazenada no arquivo
+    for song in queue:
+        line = f'{idx + 1}. {song["title"]}\n'
+        if len(current_message) + len(line) > 2000:
+            messages.append(current_message)
+            current_message = ''
+        current_message += line
+        idx += 1
+
+    # Adiciona músicas da fila temporária
+    temp_fila = list(FILA._queue)
+    for song in temp_fila:
+        line = f'{idx + 1}. {song}\n'
+        if len(current_message) + len(line) > 2000:
+            messages.append(current_message)
+            current_message = ''
+        current_message += line
+        idx += 1
+
+    # Adiciona a última mensagem, caso exista conteúdo restante
+    if current_message:
+        messages.append(current_message)
+
+    # Envia todas as partes da mensagem
+    for msg in messages:
+        await ctx.send(msg)
+
     
 
 
@@ -260,7 +282,7 @@ async def criar_radio(ctx, *, search: str):
     
 
     for music in radio_playlist["tracks"]:
-        title = music["title"]
+        title = f"{music['title']} - {music['artists'][0]['name']}"
         await FILA.put(title)
 
 # Inicia o bot
