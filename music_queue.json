@@ -1,22 +1,27 @@
 [
     {
-        "title": "1985",
-        "url": "https://www.youtube.com/watch?v=2rHRztFGOm8",
-        "filepath": "downloads\\1985.webm"
+        "title": "Gorillaz - Feel Good Inc. (Official Video)",
+        "url": "https://www.youtube.com/watch?v=HyHNuVaZJ-k",
+        "filepath": "downloads/Gorillaz - Feel Good Inc. (Official Video).webm"
     },
     {
-        "title": "2Pac - All Eyez On Me",
-        "url": "https://www.youtube.com/watch?v=H1HdZFgR-aA",
-        "filepath": "downloads\\2Pac - All Eyez On Me.webm"
+        "title": "TheFatRat - Fly Away feat. Anjulie",
+        "url": "https://www.youtube.com/watch?v=cMg8KaMdDYo",
+        "filepath": "downloads/TheFatRat - Fly Away feat. Anjulie.webm"
     },
     {
-        "title": "Numb (Official Music Video) [4K UPGRADE] \u2013 Linkin Park",
-        "url": "https://www.youtube.com/watch?v=kXYiU_JCYtU",
-        "filepath": "downloads\\Numb (Official Music Video) [4K UPGRADE] \u2013 Linkin Park.webm"
+        "title": "Stephanie Mabey - The Zombie Song (Lyric Video)",
+        "url": "https://www.youtube.com/watch?v=ZPNqub966Tw",
+        "filepath": "downloads/Stephanie Mabey - The Zombie Song (Lyric Video).webm"
     },
     {
-        "title": "twenty one pilots: Heathens (from Suicide Squad: The Album) [OFFICIAL VIDEO]",
-        "url": "https://www.youtube.com/watch?v=UprcpdwuwCg",
-        "filepath": "downloads\\twenty one pilots\uff1a Heathens (from Suicide Squad\uff1a The Album) [OFFICIAL VIDEO].webm"
+        "title": "FNAF SISTER LOCATION SONG | \"You Can't Hide\" by CK9C [Official SFM]",
+        "url": "https://www.youtube.com/watch?v=C2fihvzCJ3A",
+        "filepath": "downloads/FNAF SISTER LOCATION SONG \uff5c \uff02You Can't Hide\uff02 by CK9C [Official SFM].webm"
+    },
+    {
+        "title": "Baldi\u2019s Basics Song- Basics in Behavior [Blue]- The Living Tombstone feat. OR3O",
+        "url": "https://www.youtube.com/watch?v=weZKm1kTrpc",
+        "filepath": "downloads/Baldi\u2019s Basics Song- Basics in Behavior [Blue]- The Living Tombstone feat. OR3O.webm"
     }
 ]

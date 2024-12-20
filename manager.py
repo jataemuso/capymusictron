@@ -80,7 +80,7 @@ def verificar_e_tocar():
                     tocarmusica(musica["filepath"])
                     
                     # Música terminou naturalmente
-                    notificar_fim_musica()
+                    #notificar_fim_musica()
                     tocando = False
                     musica_atual = None
                     print(f"Música {musica['title']} terminou.")
