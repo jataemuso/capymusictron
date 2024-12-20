@@ -20,19 +20,31 @@ async def gatekeeper():
                 data = json.load(f)
 
             if len(data) < 5:
-                search = await FILA.get()
-                channel = bot.get_channel(1097966285419204649)  # Canal de notificações, vulgo: dj-capybraine
-                ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))  # Baseia-se em mensagem fixa
+                #search = await FILA.get()
+                indice_nao_baixado = next(
+                (i for i, item in enumerate(FILA_TUDO) if isinstance(item, dict) and item.get("downloaded") is False),
+                None
+            )
+            print(indice_nao_baixado)
+            if indice_nao_baixado is not None:
+                search = FILA_TUDO[indice_nao_baixado]["title"]
+                FILA_TUDO[indice_nao_baixado]["downloaded"] = True
+                channel = bot.get_channel(1097966285419204649)  # Canal de notificações
+                ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))  # Baseado em mensagem fixa
                 await reproduce(ctx, search=search)
-                print(FILA)
+                print(FILA_TUDO)  # Suponho que você queira verificar FILA_TUDO, não FILA
+            else:
+                pass
+
         
         await asyncio.sleep(1)  # Verifica a cada 1 segundo
 
 
 # Configurações iniciais do bot
-TOKEN = "MTMxNzUyOTQyOTMwMzYyNzg4OA.GRGhcx.JAV-k0Nkp7-bcPFkgHUxUKiVTcZRyqFoJEHQbc"  # Use uma variável de ambiente para o token
-PREFIX = '!'
+TOKEN = "MTMxOTQwODM2OTQ4MzY0OTE4OQ.GI1PT2.WccwfNNVLRATtIu9GSxU9bEDGToNWW9_YGS2qk"  # Use uma variável de ambiente para o token
+PREFIX = '?'
 QUEUE_FILE = 'music_queue.json'
+FILA_TUDO = []
 
 # Criação do bot
 intents = discord.Intents.default()
@@ -63,14 +75,19 @@ async def on_ready():
 
 FILA = asyncio.Queue()
 @bot.command(name='play')
-async def play(ctx, *, search: str):
+async def play(ctx, *, search: str, user=None):
+    user = ctx.author.name
     await ctx.send(f'Pesquisando por: {search}...')
     if 'playlist' in search:
         playlist = get_playlist_titles(search)
         for musica in playlist:
             await FILA.put(musica)
+            FILA_TUDO.append({"title": musica, "added_by": user, "downloaded": False})
+            print(FILA_TUDO)
     else:
         await FILA.put(search)
+        FILA_TUDO.append({"title": search, "added_by": user, "downloaded": False})
+        print(FILA_TUDO)
 
 
 async def reproduce(ctx, *, search: str):
@@ -276,14 +293,16 @@ async def move_song(ctx, from_index: int, to_index: int):
     await ctx.send(f'Movido: **{song["title"]}** para a posição {to_index}')
 
 @bot.command(name='radio')
-async def criar_radio(ctx, *, search: str):
+async def criar_radio(ctx, *, search: str, user=None):
     await ctx.send(f'Pesquisando radio: {search}...')
     radio_playlist = gerar_radio(search)
+    user = ctx.author.name
     
 
     for music in radio_playlist["tracks"]:
         title = f"{music['title']} - {music['artists'][0]['name']}"
         await FILA.put(title)
+        FILA_TUDO.append({"title": title, "added_by": user, "downloaded": False})
 
 # Inicia o bot
 if TOKEN is None:
