@@ -9,30 +9,36 @@ import shutil
 from radio import gerar_radio
 from playlist_extrator import get_playlist_titles
 import queue
+import fair_queue
 
 # Função para monitorar o fim da música
 import time
 
 async def gatekeeper():
     while True:
+        global FILA_TUDO
+        if not FILA_TUDO == []:
+            FILA_TUDO = fair_queue.order_list(FILA_TUDO)
         if os.path.exists("music_queue.json"):
             with open("music_queue.json", "r") as f:
                 data = json.load(f)
 
             if len(data) < 5:
                 #search = await FILA.get()
-                indice_nao_baixado = next(
-                (i for i, item in enumerate(FILA_TUDO) if isinstance(item, dict) and item.get("downloaded") is False),
-                None
-            )
-            print(indice_nao_baixado)
+                indice_nao_baixado = None
+                if FILA_TUDO is not None:
+                    indice_nao_baixado = next(
+                    (i for i, item in enumerate(FILA_TUDO) if isinstance(item, dict) and item.get("downloaded") is False),
+                    None
+                )
+                    print(FILA_TUDO)
+                    if indice_nao_baixado is not None: print(indice_nao_baixado)
             if indice_nao_baixado is not None:
                 search = FILA_TUDO[indice_nao_baixado]["title"]
                 FILA_TUDO[indice_nao_baixado]["downloaded"] = True
                 channel = bot.get_channel(1097966285419204649)  # Canal de notificações
                 ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))  # Baseado em mensagem fixa
                 await reproduce(ctx, search=search)
-                print(FILA_TUDO)  # Suponho que você queira verificar FILA_TUDO, não FILA
             else:
                 pass
 
@@ -76,6 +82,7 @@ async def on_ready():
 FILA = asyncio.Queue()
 @bot.command(name='play')
 async def play(ctx, *, search: str, user=None):
+    global FILA_TUDO
     user = ctx.author.name
     await ctx.send(f'Pesquisando por: {search}...')
     if 'playlist' in search:
@@ -86,6 +93,8 @@ async def play(ctx, *, search: str, user=None):
             print(FILA_TUDO)
     else:
         await FILA.put(search)
+        if FILA_TUDO is None:
+            FILA_TUDO = []  # Re-inicializa como uma lista vazia, caso seja None
         FILA_TUDO.append({"title": search, "added_by": user, "downloaded": False})
         print(FILA_TUDO)
 
