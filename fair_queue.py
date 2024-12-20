@@ -2,40 +2,46 @@ import pandas as pd
 import random
 import numpy as np
 
-FILA_TUDO = [
-    {'title': f'music {i}', 'added by': f'user {random.randint(1,3)}', 'downloaded': True} for i in range(1, 20)
-]
-
-df = pd.DataFrame(FILA_TUDO)
-print(df)
-
-
-for user in df.groupby('added by'):
-    print(f'User: {user[0]}')
-    df_user = user[1].copy()
-    print(df_user.reset_index())
-    print('---')
-
 
 def order_list(lista):
+    if lista is None:
+        return lista
+
+    # Cria DataFrame a partir da lista
     df = pd.DataFrame(lista)
-    df_ordered = pd.DataFrame(columns=['title', 'added by', 'downloaded'])
-    max_music_user = df.groupby('added by').size().max()
+    
+    # DataFrame vazio para armazenar a fila ordenada
+    df_ordered = []
+
+    # Determina o número máximo de músicas por usuário
+    max_music_user = df.groupby('added_by').size().max()
+
+    # Organiza as músicas por usuário, alternando entre os usuários
     for i in range(max_music_user):
-        for user in df.groupby('added by'):
-            if i < len(user[1]):
-                df_ordered = pd.concat(
-                    [df_ordered, user[1].iloc[i].to_frame().T], ignore_index=True
-                )
-    # Converter os valores booleanos para o tipo nativo Python antes de retornar
-    fila_ordenada = df_ordered.applymap(
-        lambda x: bool(x) if isinstance(x, (bool, np.bool_)) else x
-    ).values.tolist()
-    return fila_ordenada
+        for user, group in df.groupby('added_by'):
+            if i < len(group):
+                # Adiciona a música do usuário no índice i à lista ordenada
+                df_ordered.append(group.iloc[i].to_dict())
+
+    # Retorna a lista ordenada de dicionários
+    return df_ordered
 
 
-FILA_TUDO = order_list(FILA_TUDO)
+if __name__ == "__main__":
+    # Exemplo de FILA_TUDO com 20 músicas de 3 usuários diferentes
+    FILA_TUDO = [
+        {'title': f'music {i}', 'added_by': f'user {random.randint(1, 3)}', 'downloaded': True} for i in range(1, 21)
+    ]
 
+    # Exibe a lista original
+    print("Original:")
+    for item in FILA_TUDO:
+        print(item)
 
-for item in FILA_TUDO:
-    print(item)
+    # Ordena a lista
+    FILA_TUDO = order_list(FILA_TUDO)
+
+    # Exibe a lista ordenada
+    print("\nOrdenada:")
+    for item in FILA_TUDO:
+        print(item)
