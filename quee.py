@@ -297,6 +297,64 @@ async def criar_radio(ctx, *, search: str, user=None):
     for music in radio_playlist["tracks"]:
         title = f"{music['title']} - {music['artists'][0]['name']}"
         await FILA.put(title)
+        FILA_TUDO.append({"title": title, "added_by": user, "downloaded": False})
+
+async def tocar(ctx, *, filepath: str):
+    """
+    Toca um arquivo MP3 diretamente em um canal de voz.
+    Args:
+        ctx: Contexto do comando.
+        filepath (str): Caminho para o arquivo MP3.
+    """
+    # Verifica se o arquivo existe
+    if not os.path.exists(filepath):
+        await ctx.send(f"Arquivo não encontrado: `{filepath}`")
+        return
+
+    # Obtém o canal de voz do usuário
+    # if ctx.author.voice is None:
+    #     await ctx.send("Você precisa estar em um canal de voz para usar este comando.")
+    #     return
+
+    voice_channel = bot.get_channel(1097958896930398348)
+
+
+    # Conecta-se ao canal de voz
+    try:
+        voice_client = await voice_channel.connect()
+    except discord.ClientException:
+        voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+
+    if voice_client is None:
+        await ctx.send("Falha ao conectar ao canal de voz.")
+        return
+
+    # Reproduz o áudio usando FFmpeg
+    try:
+        if not voice_client.is_playing():
+            source = discord.FFmpegPCMAudio(filepath)
+            voice_client.play(source, after=lambda e: print(f"Erro: {e}") if e else None)
+            await ctx.send(f"Tocando: `{os.path.basename(filepath)}`")
+
+            # Aguarda enquanto o áudio está sendo reproduzido
+            while voice_client.is_playing():
+                await asyncio.sleep(1)
+
+        # Desconecta após a reprodução
+        #await voice_client.disconnect()
+    except Exception as e:
+        await ctx.send(f"Ocorreu um erro ao tocar o arquivo: {e}")
+        if voice_client:
+            await voice_client.disconnect()
+
+@bot.event
+async def on_ready():
+    print(f'{bot.user} está online e pronto para uso!')
+    
+    # Inicia a tarefa assíncrona para monitorar o fim da música
+    bot.loop.create_task(gatekeeper())
+    bot.loop.create_task(gatekeeper_tocar())
+
 
 # Inicia o bot
 if TOKEN is None:
