@@ -2,7 +2,8 @@ import json
 
 def reorder_json(original_json, new_order_titles):
     """
-    Reordena um JSON baseado na ordem e estrutura fornecida em new_order_titles.
+    Reordena um JSON baseado na ordem e estrutura fornecida em new_order_titles,
+    adicionando itens apenas se `downloaded` for True.
 
     Args:
         original_json (list): Lista de dicionários representando o JSON original.
@@ -49,6 +50,10 @@ def reorder_json(original_json, new_order_titles):
             print("Erro: 'real_title' não encontrado em new_order_titles.")
             continue
 
+        if not item.get('downloaded', False):  # Verifica se o item foi baixado
+            print(f"Ignorando item '{real_title}' porque 'downloaded' é False ou ausente.")
+            continue
+
         if real_title in original_dict:
             print(f"Atualizando item existente: {real_title}")
             reordered_item = original_dict[real_title]
@@ -82,11 +87,11 @@ def process_music_queue(new_order_titles):
     print("Iniciando reorganização do JSON...")
     reorder_json(music_queue, new_order_titles)
 
-    # Salvando o JSON reorganizado em arquivo
-    with open('reordered.json', 'w', encoding='utf-8') as file:
+    # Salvando o JSON reorganizado de volta no arquivo original
+    with open('music_queue.json', 'w', encoding='utf-8') as file:
         json.dump(music_queue, file, ensure_ascii=False, indent=4)
 
-    print("JSON reorganizado salvo em 'reordered.json'.")
+    print("JSON reorganizado salvo em 'music_queue.json'.")
 
 # Chamada da função para processar o music_queue.json
-#process_music_queue()
+# process_music_queue(new_order_titles)

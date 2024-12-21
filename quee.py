@@ -28,7 +28,7 @@ async def gatekeeper():
             with open("music_queue.json", "r") as f:
                 data = json.load(f)
 
-            if len(data) < 10:
+            if not all(item.get('downloaded') == True for item in FILA_TUDO[:5]):
                 #search = await FILA.get()
                 indice_nao_baixado = None
                 if FILA_TUDO is not None:
@@ -36,16 +36,15 @@ async def gatekeeper():
                     (i for i, item in enumerate(FILA_TUDO) if isinstance(item, dict) and item.get("downloaded") is False),
                     None
                 )
-                    print(FILA_TUDO)
                     if indice_nao_baixado is not None: print(indice_nao_baixado)
             if indice_nao_baixado is not None:
                 search = FILA_TUDO[indice_nao_baixado]["title"]
                 channel = bot.get_channel(1097966285419204649)  # Canal de notificações
                 ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))  # Baseado em mensagem fixa
                 await reproduce(ctx, search=search)
-                await asyncio.sleep(0.001)
-                reorder.process_music_queue(FILA_TUDO)
+                await asyncio.sleep(0.001) # não remover, quebra o codigo
                 FILA_TUDO[indice_nao_baixado]["downloaded"] = True
+                reorder.process_music_queue(FILA_TUDO)
             else:
                 pass
 
@@ -76,7 +75,8 @@ def add_to_queue(title, url, filepath):
         queue = json.load(f)
 
     queue.append({"title": title, "url": url, "filepath": filepath})
-    FILA_TUDO[indice_nao_baixado]["real_title"] = title
+    infomacoes = {"real_title": title, "url": url, "filepath": filepath}
+    FILA_TUDO[indice_nao_baixado].update(infomacoes)
 
 
     with open(QUEUE_FILE, 'w') as f:
