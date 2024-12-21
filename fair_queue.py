@@ -18,7 +18,7 @@ def order_list(lista):
 
     # Organiza as músicas por usuário, alternando entre os usuários
     for i in range(max_music_user):
-        for user, group in df.groupby('added_by'):
+        for user, group in df.groupby('added_by', sort=False):
             if i < len(group):
                 # Adiciona a música do usuário no índice i à lista ordenada
                 df_ordered.append(group.iloc[i].to_dict())
@@ -30,9 +30,11 @@ def order_list(lista):
 if __name__ == "__main__":
     # Exemplo de FILA_TUDO com 20 músicas de 3 usuários diferentes
     FILA_TUDO = [
-        {'title': f'music {i}', 'added_by': f'user {random.randint(1, 3)}', 'downloaded': True} for i in range(1, 21)
+        {'title': f'music {i}', 'added_by': f'user {random.randint(1, 4)}', 'downloaded': True, 'playnext': False} for i in range(1, 21)
     ]
 
+    FILA_TUDO[0]['playnext'] = True
+    FILA_TUDO[1]['playnext'] = True
     # Exibe a lista original
     print("Original:")
     for item in FILA_TUDO:
@@ -40,6 +42,8 @@ if __name__ == "__main__":
 
     # Ordena a lista
     FILA_TUDO = order_list(FILA_TUDO)
+    df = pd.DataFrame(FILA_TUDO)
+    print(df)
 
     # Exibe a lista ordenada
     print("\nOrdenada:")
