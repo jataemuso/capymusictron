@@ -9,30 +9,55 @@ import shutil
 from radio import gerar_radio
 from playlist_extrator import get_playlist_titles
 import queue
-
+import fair_queue
+import reorder
 # Função para monitorar o fim da música
 import time
 
+indice_nao_baixado = None
+
+
 async def gatekeeper():
     while True:
+        global FILA_TUDO
+        global indice_nao_baixado
+
+        if not FILA_TUDO == []:
+            FILA_TUDO = fair_queue.order_list(FILA_TUDO)
         if os.path.exists("music_queue.json"):
-            with open("music_queue.json", "r") as f:
+            with open("music_queue.json", "r", encoding='utf-8') as f:
                 data = json.load(f)
 
-            if len(data) < 5:
-                search = await FILA.get()
-                channel = bot.get_channel(1097966285419204649)  # Canal de notificações, vulgo: dj-capybraine
-                ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))  # Baseia-se em mensagem fixa
+            if not all(item.get('downloaded') == True for item in FILA_TUDO[:5]):
+                #search = await FILA.get()
+                indice_nao_baixado = None
+                if FILA_TUDO is not None:
+                    indice_nao_baixado = next(
+                    (i for i, item in enumerate(FILA_TUDO) if isinstance(item, dict) and item.get("downloaded") is False),
+                    None
+                )
+                    if indice_nao_baixado is not None: print(indice_nao_baixado)
+            if indice_nao_baixado is not None:
+                search = FILA_TUDO[indice_nao_baixado]["title"]
+                channel = bot.get_channel(1097966285419204649)  # Canal de notificações
+                ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))  # Baseado em mensagem fixa
                 await reproduce(ctx, search=search)
-                print(FILA)
+                await asyncio.sleep(0.001) # não remover, quebra o codigo
+                FILA_TUDO[indice_nao_baixado]["downloaded"] = True
+                indice_nao_baixado = None
+                reorder.process_music_queue(FILA_TUDO)
+            else:
+                pass
+
         
         await asyncio.sleep(1)  # Verifica a cada 1 segundo
 
 
 # Configurações iniciais do bot
 TOKEN = "***REMOVED***"  # Use uma variável de ambiente para o token
-PREFIX = '!'
+PREFIX = '?'
 QUEUE_FILE = 'music_queue.json'
+FILA_TUDO = []
 
 # Criação do bot
 intents = discord.Intents.default()
@@ -41,17 +66,21 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 
 # Função para inicializar a fila
 if not os.path.exists(QUEUE_FILE):
-    with open(QUEUE_FILE, 'w') as f:
+    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
         json.dump([], f)
 
 # Função para adicionar à fila
 def add_to_queue(title, url, filepath):
-    with open(QUEUE_FILE, 'r') as f:
+    global indice_nao_baixado
+    with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
         queue = json.load(f)
 
     queue.append({"title": title, "url": url, "filepath": filepath})
+    infomacoes = {"real_title": title, "url": url, "filepath": filepath}
+    FILA_TUDO[indice_nao_baixado].update(infomacoes)
 
-    with open(QUEUE_FILE, 'w') as f:
+
+    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
         json.dump(queue, f, indent=4)
 
 @bot.event
@@ -63,15 +92,22 @@ async def on_ready():
 
 FILA = asyncio.Queue()
 @bot.command(name='play')
-async def play(ctx, *, search: str):
+async def play(ctx, *, search: str, user=None):
+    global FILA_TUDO
+    user = ctx.author.name
     await ctx.send(f'Pesquisando por: {search}...')
     if 'playlist' in search:
         playlist = get_playlist_titles(search)
         for musica in playlist:
             await FILA.put(musica)
+            FILA_TUDO.append({"title": musica, "added_by": user, "downloaded": False, 'playnext': False})
+            print(FILA_TUDO)
     else:
         await FILA.put(search)
-
+        if FILA_TUDO is None:
+            FILA_TUDO = []  # Re-inicializa como uma lista vazia, caso seja None
+        FILA_TUDO.append({"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False})
+        print(FILA_TUDO)
 
 async def reproduce(ctx, *, search: str):
     #await ctx.send(f'Pesquisando por: {search}...')
@@ -119,19 +155,19 @@ async def on_download_complete_next(d, ctx):
         url = d.get('info_dict', {}).get('webpage_url', 'URL desconhecida')
         filepath = d.get('filename', 'Caminho desconhecido')
 
-        with open(QUEUE_FILE, 'r') as f:
+        with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
             queue = json.load(f)
 
         queue.insert(0, {"title": title, "url": url, "filepath": filepath})
 
-        with open(QUEUE_FILE, 'w') as f:
+        with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
             json.dump(queue, f, indent=4)
 
         #await ctx.send(f'Adicionado à fila: **{title}**\nArquivo: `{filepath}`')
 
 @bot.command(name='queue')
 async def show_queue(ctx):
-    with open(QUEUE_FILE, 'r') as f:
+    with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
         queue = json.load(f)
 
     if not queue:
@@ -169,14 +205,11 @@ async def show_queue(ctx):
     for msg in messages:
         await ctx.send(msg)
 
-    
-
-
 @bot.command(name='clear', aliases=['stop'])
 async def clear_queue(ctx):
     while not FILA.empty():  # Enquanto a fila não estiver vazia
         await FILA.get()     # Remove um item da fila
-    with open(QUEUE_FILE, 'w') as f:
+    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
         json.dump([], f)
     try:
         shutil.rmtree("/downloads")
@@ -187,7 +220,7 @@ async def clear_queue(ctx):
 @bot.command(name='shuffle')
 async def shuffle_queue(ctx):
 
-    with open(QUEUE_FILE, 'r') as f:
+    with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
         queue = json.load(f)
     for music in queue:
         await FILA.put(music["title"])
@@ -202,7 +235,7 @@ async def shuffle_queue(ctx):
     for music in FILA_lista:
         await FILA.put(music)
 
-    with open(QUEUE_FILE, 'w') as f:
+    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
         json.dump([], f)
     if os.path.exists("downloads"):
         shutil.rmtree("downloads")
@@ -211,7 +244,7 @@ async def shuffle_queue(ctx):
 
 @bot.command(name='remove')
 async def remove_from_queue(ctx, index: int):
-    with open(QUEUE_FILE, 'r') as f:
+    with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
         queue = json.load(f)
 
     if index < 1 or index > len(queue):
@@ -220,7 +253,7 @@ async def remove_from_queue(ctx, index: int):
 
     removed_song = queue.pop(index - 1)
 
-    with open(QUEUE_FILE, 'w') as f:
+    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
         json.dump(queue, f, indent=4)
 
     await ctx.send(f'Removido da fila: **{removed_song["title"]}**')
@@ -228,39 +261,12 @@ async def remove_from_queue(ctx, index: int):
 @bot.command(name='playnext')
 async def play_next(ctx, *, search: str):
     await ctx.send(f'Pesquisando por: {search} para adicionar como próxima...')
-
-    ydl_opts = {
-        'format': 'bestaudio[ext=webp]/bestaudio',
-        'outtmpl': 'downloads/%(title)s.%(ext)s',
-        'quiet': True,
-        'default_search': 'ytsearch',
-        'noplaylist': False,
-        'progress_hooks': [lambda d: asyncio.run_coroutine_threadsafe(on_download_complete_next(d, ctx), bot.loop)]  # Chama função ao finalizar download
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            info = ydl.extract_info(search, download=True)
-            title = info.get('title', 'Título desconhecido')
-            url = info.get('webpage_url', 'URL desconhecida')
-            filepath = ydl.prepare_filename(info)
-
-            # with open(QUEUE_FILE, 'r') as f:
-            #     queue = json.load(f)
-
-            # queue.insert(0, {"title": title, "url": url, "filepath": filepath})
-
-            # with open(QUEUE_FILE, 'w') as f:
-            #     json.dump(queue, f, indent=4)
-
-            # await ctx.send(f'Adicionado como próximo: **{title}**')
-        except Exception as e:
-            print(f"Erro ao adicionar música como próxima: {e}")
-            await ctx.send(f"Ocorreu um erro: {e}")
+    user = ctx.author.name
+    FILA_TUDO.insert(0, {"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': True})
 
 @bot.command(name='move')
 async def move_song(ctx, from_index: int, to_index: int):
-    with open(QUEUE_FILE, 'r') as f:
+    with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
         queue = json.load(f)
 
     if from_index < 1 or from_index > len(queue) or to_index < 1 or to_index > len(queue):
@@ -270,20 +276,22 @@ async def move_song(ctx, from_index: int, to_index: int):
     song = queue.pop(from_index - 1)
     queue.insert(to_index - 1, song)
 
-    with open(QUEUE_FILE, 'w') as f:
+    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
         json.dump(queue, f, indent=4)
 
     await ctx.send(f'Movido: **{song["title"]}** para a posição {to_index}')
 
 @bot.command(name='radio')
-async def criar_radio(ctx, *, search: str):
+async def criar_radio(ctx, *, search: str, user=None):
     await ctx.send(f'Pesquisando radio: {search}...')
     radio_playlist = gerar_radio(search)
+    user = ctx.author.name
     
 
     for music in radio_playlist["tracks"]:
         title = f"{music['title']} - {music['artists'][0]['name']}"
         await FILA.put(title)
+        FILA_TUDO.append({"title": title, "added_by": user, "downloaded": False})
 
 # Inicia o bot
 if TOKEN is None:
