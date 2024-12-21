@@ -10,20 +10,25 @@ from radio import gerar_radio
 from playlist_extrator import get_playlist_titles
 import queue
 import fair_queue
-
+import reorder
 # Função para monitorar o fim da música
 import time
+
+indice_nao_baixado = None
+
 
 async def gatekeeper():
     while True:
         global FILA_TUDO
+        global indice_nao_baixado
+
         if not FILA_TUDO == []:
             FILA_TUDO = fair_queue.order_list(FILA_TUDO)
         if os.path.exists("music_queue.json"):
             with open("music_queue.json", "r") as f:
                 data = json.load(f)
 
-            if len(data) < 5:
+            if len(data) < 10:
                 #search = await FILA.get()
                 indice_nao_baixado = None
                 if FILA_TUDO is not None:
@@ -35,10 +40,12 @@ async def gatekeeper():
                     if indice_nao_baixado is not None: print(indice_nao_baixado)
             if indice_nao_baixado is not None:
                 search = FILA_TUDO[indice_nao_baixado]["title"]
-                FILA_TUDO[indice_nao_baixado]["downloaded"] = True
                 channel = bot.get_channel(1097966285419204649)  # Canal de notificações
                 ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))  # Baseado em mensagem fixa
                 await reproduce(ctx, search=search)
+                await asyncio.sleep(0.001)
+                reorder.process_music_queue(FILA_TUDO)
+                FILA_TUDO[indice_nao_baixado]["downloaded"] = True
             else:
                 pass
 
@@ -64,10 +71,13 @@ if not os.path.exists(QUEUE_FILE):
 
 # Função para adicionar à fila
 def add_to_queue(title, url, filepath):
+    global indice_nao_baixado
     with open(QUEUE_FILE, 'r') as f:
         queue = json.load(f)
 
     queue.append({"title": title, "url": url, "filepath": filepath})
+    FILA_TUDO[indice_nao_baixado]["real_title"] = title
+
 
     with open(QUEUE_FILE, 'w') as f:
         json.dump(queue, f, indent=4)
@@ -95,7 +105,7 @@ async def play(ctx, *, search: str, user=None):
         await FILA.put(search)
         if FILA_TUDO is None:
             FILA_TUDO = []  # Re-inicializa como uma lista vazia, caso seja None
-        FILA_TUDO.append({"title": search, "added_by": user, "downloaded": False})
+        FILA_TUDO.append({"title": search, "added_by": user, "real_title": None, "downloaded": False})
         print(FILA_TUDO)
 
 
