@@ -21,6 +21,16 @@ if os.path.exists(DOWNLOADS_FOLDER):
         print("Pasta de downloads apagada.")
 
 
+def canal_usuario(ctx):
+    if ctx.author.voice and ctx.author.voice.channel:
+        channel = ctx.author.voice.channel.id
+    else: 
+        print("sem canal")
+        channel = None
+    print(channel)
+    return channel
+
+
 async def gatekeeper():
     while True:
         global FILA_TUDO
@@ -58,8 +68,9 @@ async def gatekeeper_tocar():
             channel = bot.get_channel(1097966285419204649)
             ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))
             musica = FILA_TUDO.pop(0)
+            voice_channel = ctx.guild.get_channel(musica["voice_channel_id"])
             tocando_agora = musica
-            await tocar(ctx, filepath=musica['filepath'])
+            await tocar(ctx, filepath=musica['filepath'], voice_channel=voice_channel)
             tocando_agora = None
 
         await asyncio.sleep(2)
@@ -89,16 +100,21 @@ def add_to_queue(title, url, filepath):
 async def play(ctx, *, search: str, user=None):
     global FILA_TUDO
     user = ctx.author.name
+    canal = canal_usuario(ctx)
+    if canal is None:
+        ctx.send(f'Você não pode adicionar músicas enquanto fora de um canal!')
+        return
+
     await ctx.send(f'Pesquisando por: {search}...')
     if 'playlist' in search:
         playlist = get_playlist_titles(search)
         for musica in playlist:
-            FILA_TUDO.append({"title": musica, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False})
+            FILA_TUDO.append({"title": musica, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
             print(FILA_TUDO)
     else:
         if FILA_TUDO is None:
             FILA_TUDO = []  # Re-inicializa como uma lista vazia, caso seja None
-        FILA_TUDO.append({"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False})
+        FILA_TUDO.append({"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
         print(FILA_TUDO)
 
 async def reproduce(ctx, *, search: str):
@@ -138,7 +154,6 @@ async def on_download_complete(d, ctx):
 
         # Adiciona à fila e envia mensagem
         add_to_queue(title, url, filepath)
-        #await ctx.send(f'Adicionado à fila: **{title}**\nArquivo: `{filepath}`')
 
 
 
@@ -225,6 +240,8 @@ async def remove_from_queue(ctx, index: int):
 async def play_next(ctx, *, search: str):
     # ID do cargo que você quer verificar
     cargo_permitido_id = 1145158831052177428
+    voice_channel = canal_usuario(ctx)
+
 
     # Verifica se o autor do comando tem o cargo específico
     if cargo_permitido_id not in [role.id for role in ctx.author.roles]:
@@ -232,12 +249,15 @@ async def play_next(ctx, *, search: str):
         await ctx.send("Você não tem permissão para usar este comando!")
         return
 
-    # Se o usuário tem o cargo, executa o comando
+    if voice_channel is None:
+        await ctx.send("Você não pode usar esse comando fora de um canal de voz.")
+        return
+
     await ctx.send(f'Pesquisando por: {search} para adicionar como próxima...')
     user = ctx.author.name
 
     # Adiciona a música à fila
-    FILA_TUDO.insert(0, {"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': True})
+    FILA_TUDO.insert(0, {"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': True, 'voice_channel_id': voice_channel})
     await ctx.send(f'A música "{search}" foi adicionada como próxima na fila!')
 
 
@@ -256,6 +276,10 @@ async def move_song(ctx, from_index: int, to_index: int):
 
 @bot.command(name='radio')
 async def criar_radio(ctx, *, search: str, user=None):
+    canal = canal_usuario(ctx)
+    if canal is None:
+        await ctx.send('Você não pode criar rádios sem estar em um canal de voz.')
+        return
     await ctx.send(f'Pesquisando radio: {search}...')
     radio_playlist = gerar_radio(search)
     user = ctx.author.name
@@ -263,9 +287,9 @@ async def criar_radio(ctx, *, search: str, user=None):
 
     for music in radio_playlist["tracks"]:
         title = f"{music['title']} - {music['artists'][0]['name']}"
-        FILA_TUDO.append({"title": title, "added_by": user, "downloaded": False, 'playnext': False})
+        FILA_TUDO.append({"title": title, "added_by": user, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
 
-async def tocar(ctx, *, filepath: str):
+async def tocar(ctx, *, filepath: str, voice_channel=None):
     """
     Toca um arquivo MP3 diretamente em um canal de voz.
     Args:
@@ -277,15 +301,6 @@ async def tocar(ctx, *, filepath: str):
         await ctx.send(f"Arquivo não encontrado: `{filepath}`")
         return
 
-    # Obtém o canal de voz do usuário
-    # if ctx.author.voice is None:
-    #     await ctx.send("Você precisa estar em um canal de voz para usar este comando.")
-    #     return
-
-    voice_channel = bot.get_channel(1097958896930398348)
-
-
-    # Conecta-se ao canal de voz
     try:
         voice_client = await voice_channel.connect()
     except discord.ClientException:
