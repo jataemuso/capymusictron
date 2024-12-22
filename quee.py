@@ -28,9 +28,6 @@ async def gatekeeper():
 
         if not FILA_TUDO == []:
             FILA_TUDO = fair_queue.order_list(FILA_TUDO)
-        if os.path.exists("music_queue.json"):
-            with open("music_queue.json", "r", encoding='utf-8') as f:
-                data = json.load(f)
 
             if not all(item.get('downloaded') == True for item in FILA_TUDO[:5]):
                 indice_nao_baixado = None
@@ -80,10 +77,6 @@ intents = discord.Intents.default()
 intents.message_content = True  # Habilita a leitura do conteúdo das mensagens
 bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 
-# Função para inicializar a fila
-if not os.path.exists(QUEUE_FILE):
-    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
-        json.dump([], f)
 
 # Função para adicionar à fila
 def add_to_queue(title, url, filepath):
@@ -92,8 +85,6 @@ def add_to_queue(title, url, filepath):
     FILA_TUDO[indice_nao_baixado].update(infomacoes)
 
 
-
-FILA = asyncio.Queue()
 @bot.command(name='play')
 async def play(ctx, *, search: str, user=None):
     global FILA_TUDO
@@ -102,11 +93,9 @@ async def play(ctx, *, search: str, user=None):
     if 'playlist' in search:
         playlist = get_playlist_titles(search)
         for musica in playlist:
-            await FILA.put(musica)
-            FILA_TUDO.append({"title": musica, "added_by": user, "downloaded": False, 'playnext': False})
+            FILA_TUDO.append({"title": musica, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False})
             print(FILA_TUDO)
     else:
-        await FILA.put(search)
         if FILA_TUDO is None:
             FILA_TUDO = []  # Re-inicializa como uma lista vazia, caso seja None
         FILA_TUDO.append({"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False})
@@ -207,10 +196,6 @@ async def skip(ctx):
 async def clear(ctx):
         global FILA_TUDO
         FILA_TUDO = []
-        with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
-            json.dump([], f)
-        await ctx.send("A fila foi limpa.")
-
 
 @bot.command(name='stop')
 async def stop(ctx):
