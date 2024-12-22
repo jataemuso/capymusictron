@@ -20,6 +20,7 @@ def order_list(lista):
     # Determina o número máximo de músicas por usuário
     max_music_user = df.groupby('added_by').size().max()
 
+    df = df[df['playnext'] == False]
     # Organiza as músicas por usuário, alternando entre os usuários
     for i in range(max_music_user):
         for user, group in df.groupby('added_by', sort=False):
@@ -54,20 +55,3 @@ if __name__ == "__main__":
     for item in FILA_TUDO:
         print(item)
 
-
-def order_list(df):
-    df_ordered = pd.DataFrame(columns=['title', 'added by', 'downloaded'])
-
-    # Adiciona musicas do playnext primeiro
-    df_ordered = pd.concat([df_ordered, df[df['play_next'] == True]])
-
-    # Adiciona musicas restantes
-    df = df[df['play_next'] == False]
-    max_music_user = df.groupby('added by').size().max()
-    for i in range(max_music_user):
-        for user in df.groupby('added by', sort=False):
-            if i < len(user[1]):
-                df_ordered = pd.concat(
-                    [df_ordered, user[1].iloc[i].to_frame().T], ignore_index=True
-                )
-    return df_ordered

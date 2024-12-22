@@ -8,13 +8,17 @@ import asyncio
 import shutil
 from radio import gerar_radio
 from playlist_extrator import get_playlist_titles
-import queue
 import fair_queue
-import reorder
 # Função para monitorar o fim da música
-import time
 
 indice_nao_baixado = None
+tocando_agora = None
+
+DOWNLOADS_FOLDER = 'downloads'
+
+if os.path.exists(DOWNLOADS_FOLDER):
+        shutil.rmtree(DOWNLOADS_FOLDER)  # Apaga a pasta de downloads e seu conteúdo
+        print("Pasta de downloads apagada.")
 
 
 async def gatekeeper():
@@ -29,7 +33,6 @@ async def gatekeeper():
                 data = json.load(f)
 
             if not all(item.get('downloaded') == True for item in FILA_TUDO[:5]):
-                #search = await FILA.get()
                 indice_nao_baixado = None
                 if FILA_TUDO is not None:
                     indice_nao_baixado = next(
@@ -45,7 +48,6 @@ async def gatekeeper():
                 await asyncio.sleep(0.001) # não remover, quebra o codigo
                 FILA_TUDO[indice_nao_baixado]["downloaded"] = True
                 indice_nao_baixado = None
-                reorder.process_music_queue(FILA_TUDO)
             else:
                 pass
 
@@ -53,12 +55,15 @@ async def gatekeeper():
         await asyncio.sleep(1)  # Verifica a cada 1 segundo
 
 async def gatekeeper_tocar():
+    global tocando_agora
     while True:
         if len(FILA_TUDO) > 0 and FILA_TUDO[0]['downloaded'] == True:
             channel = bot.get_channel(1097966285419204649)
             ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))
-            await tocar(ctx, filepath=FILA_TUDO[0]['filepath'])
-            del FILA_TUDO[0]
+            musica = FILA_TUDO.pop(0)
+            tocando_agora = musica
+            await tocar(ctx, filepath=musica['filepath'])
+            tocando_agora = None
 
         await asyncio.sleep(2)
 
@@ -83,16 +88,8 @@ if not os.path.exists(QUEUE_FILE):
 # Função para adicionar à fila
 def add_to_queue(title, url, filepath):
     global indice_nao_baixado
-    with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
-        queue = json.load(f)
-
-    queue.append({"title": title, "url": url, "filepath": filepath})
     infomacoes = {"real_title": title, "url": url, "filepath": filepath}
     FILA_TUDO[indice_nao_baixado].update(infomacoes)
-
-
-    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(queue, f, indent=4)
 
 
 
@@ -154,29 +151,13 @@ async def on_download_complete(d, ctx):
         add_to_queue(title, url, filepath)
         #await ctx.send(f'Adicionado à fila: **{title}**\nArquivo: `{filepath}`')
 
-# Função de callback para quando o download for concluído
-async def on_download_complete_next(d, ctx):
-    if d['status'] == 'finished':
-        title = d.get('info_dict', {}).get('title', 'Título desconhecido')
-        url = d.get('info_dict', {}).get('webpage_url', 'URL desconhecida')
-        filepath = d.get('filename', 'Caminho desconhecido')
 
-        with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
-            queue = json.load(f)
-
-        queue.insert(0, {"title": title, "url": url, "filepath": filepath})
-
-        with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(queue, f, indent=4)
-
-        #await ctx.send(f'Adicionado à fila: **{title}**\nArquivo: `{filepath}`')
 
 @bot.command(name='queue')
 async def show_queue(ctx):
-    with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
-        queue = json.load(f)
+    global tocando_agora
 
-    if not queue:
+    if len(FILA_TUDO) == 0:
         await ctx.send('A fila está vazia.')
         return
 
@@ -184,19 +165,12 @@ async def show_queue(ctx):
     messages = []  # Lista para armazenar as mensagens divididas
     current_message = 'Fila de músicas:\n'
 
-    # Adiciona músicas da fila armazenada no arquivo
-    for song in queue:
-        line = f'{idx + 1}. {song["title"]}\n'
-        if len(current_message) + len(line) > 2000:
-            messages.append(current_message)
-            current_message = ''
-        current_message += line
-        idx += 1
+    if tocando_agora is not None:
+        current_message += f"Reproduzindo: {tocando_agora['real_title']}\n"
 
-    # Adiciona músicas da fila temporária
-    temp_fila = list(FILA._queue)
-    for song in temp_fila:
-        line = f'{idx + 1}. {song}\n'
+    # Adiciona músicas da fila armazenada no arquivo
+    for song in FILA_TUDO:
+        line = f'{idx + 1}. {song["title"]}\n'
         if len(current_message) + len(line) > 2000:
             messages.append(current_message)
             current_message = ''
@@ -211,79 +185,87 @@ async def show_queue(ctx):
     for msg in messages:
         await ctx.send(msg)
 
-@bot.command(name='clear', aliases=['stop'])
-async def clear_queue(ctx):
-    while not FILA.empty():  # Enquanto a fila não estiver vazia
-        await FILA.get()     # Remove um item da fila
-    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
-        json.dump([], f)
-    try:
-        shutil.rmtree("/downloads")
-    except:
-        pass
-    await ctx.send('A fila foi limpa.')
+@bot.command(name='skip')
+async def skip(ctx):
+    # Obtém o cliente de voz ativo
+    voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+    
+    if voice_client and voice_client.is_connected():
+        if voice_client.is_playing():
+            voice_client.stop()  # Para a reprodução do áudio
+            await ctx.send("Reprodução parada.")
+        else:
+            await ctx.send("Nenhum áudio está sendo reproduzido no momento.")
+        
+        # Desconecta do canal de voz, se desejado
+        await voice_client.disconnect()
+        await ctx.send("Bot desconectado do canal de voz.")
+    else:
+        await ctx.send("O bot não está conectado a nenhum canal de voz.")
+
+@bot.command(name='clear')
+async def clear(ctx):
+        global FILA_TUDO
+        FILA_TUDO = []
+        with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
+            json.dump([], f)
+        await ctx.send("A fila foi limpa.")
+
+
+@bot.command(name='stop')
+async def stop(ctx):
+    await skip(ctx)
+    await clear(ctx)
+
+
 
 @bot.command(name='shuffle')
 async def shuffle_queue(ctx):
-
-    with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
-        queue = json.load(f)
-    for music in queue:
-        await FILA.put(music["title"])
-
-    FILA_lista = list(FILA._queue)
-
-    random.shuffle(FILA_lista)
-
-    while not FILA.empty():  # Enquanto a fila não estiver vazia
-        await FILA.get()     # Remove um item da fila
-
-    for music in FILA_lista:
-        await FILA.put(music)
-
-    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
-        json.dump([], f)
-    if os.path.exists("downloads"):
-        shutil.rmtree("downloads")
-
+    random.shuffle(FILA_TUDO)
     await ctx.send('A fila foi embaralhada.')
 
 @bot.command(name='remove')
 async def remove_from_queue(ctx, index: int):
-    with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
-        queue = json.load(f)
+    global FILA_TUDO
 
-    if index < 1 or index > len(queue):
+    if index < 1 or index > len(FILA_TUDO):
         await ctx.send('Índice inválido. Certifique-se de fornecer um número válido.')
         return
 
-    removed_song = queue.pop(index - 1)
-
-    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(queue, f, indent=4)
+    removed_song = FILA_TUDO.pop(index - 1)
 
     await ctx.send(f'Removido da fila: **{removed_song["title"]}**')
 
 @bot.command(name='playnext')
 async def play_next(ctx, *, search: str):
+    # ID do cargo que você quer verificar
+    cargo_permitido_id = 1145158831052177428
+
+    # Verifica se o autor do comando tem o cargo específico
+    if cargo_permitido_id not in [role.id for role in ctx.author.roles]:
+        # Se o usuário não tiver o cargo, envia uma mensagem e retorna
+        await ctx.send("Você não tem permissão para usar este comando!")
+        return
+
+    # Se o usuário tem o cargo, executa o comando
     await ctx.send(f'Pesquisando por: {search} para adicionar como próxima...')
     user = ctx.author.name
+
+    # Adiciona a música à fila
     FILA_TUDO.insert(0, {"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': True})
+    await ctx.send(f'A música "{search}" foi adicionada como próxima na fila!')
+
 
 @bot.command(name='move')
 async def move_song(ctx, from_index: int, to_index: int):
-    with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
-        queue = json.load(f)
+    global FILA_TUDO
 
-    if from_index < 1 or from_index > len(queue) or to_index < 1 or to_index > len(queue):
+    if from_index < 1 or from_index > len(FILA_TUDO) or to_index < 1 or to_index > len(FILA_TUDO):
         await ctx.send('Índices inválidos. Certifique-se de fornecer números válidos.')
         return
 
-    song = queue.pop(from_index - 1)
-    queue.insert(to_index - 1, song)
-
-    with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(queue, f, indent=4)
+    song = FILA_TUDO.pop(from_index - 1)
+    FILA_TUDO.insert(to_index - 1, song)
 
     await ctx.send(f'Movido: **{song["title"]}** para a posição {to_index}')
 
@@ -296,8 +278,7 @@ async def criar_radio(ctx, *, search: str, user=None):
 
     for music in radio_playlist["tracks"]:
         title = f"{music['title']} - {music['artists'][0]['name']}"
-        await FILA.put(title)
-        FILA_TUDO.append({"title": title, "added_by": user, "downloaded": False})
+        FILA_TUDO.append({"title": title, "added_by": user, "downloaded": False, 'playnext': False})
 
 async def tocar(ctx, *, filepath: str):
     """
@@ -341,7 +322,7 @@ async def tocar(ctx, *, filepath: str):
                 await asyncio.sleep(1)
 
         # Desconecta após a reprodução
-        #await voice_client.disconnect()
+        await voice_client.disconnect()
     except Exception as e:
         await ctx.send(f"Ocorreu um erro ao tocar o arquivo: {e}")
         if voice_client:
