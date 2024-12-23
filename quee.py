@@ -39,7 +39,7 @@ async def gatekeeper():
         if not FILA_TUDO == []:
             FILA_TUDO = fair_queue.order_list(FILA_TUDO)
 
-            if not all(item.get('downloaded') == True for item in FILA_TUDO[:5]):
+            if not all(item.get('downloaded') == True for item in FILA_TUDO[:1]):
                 indice_nao_baixado = None
                 if FILA_TUDO is not None:
                     indice_nao_baixado = next(
@@ -89,11 +89,6 @@ intents.message_content = True  # Habilita a leitura do conteúdo das mensagens
 bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 
 
-# Função para adicionar à fila
-def add_to_queue(title, url, filepath):
-    global indice_nao_baixado
-    infomacoes = {"real_title": title, "url": url, "filepath": filepath}
-    FILA_TUDO[indice_nao_baixado].update(infomacoes)
 
 
 @bot.command(name='play')
@@ -153,7 +148,9 @@ async def on_download_complete(d, ctx):
         filepath = d.get('filename', 'Caminho desconhecido')  # Usa 'filename' diretamente do progresso
 
         # Adiciona à fila e envia mensagem
-        add_to_queue(title, url, filepath)
+        global indice_nao_baixado
+        infomacoes = {"real_title": title, "url": url, "filepath": filepath}
+        FILA_TUDO[indice_nao_baixado].update(infomacoes)
 
 
 
@@ -297,14 +294,18 @@ async def tocar(ctx, *, filepath: str, voice_channel=None):
         filepath (str): Caminho para o arquivo MP3.
     """
     # Verifica se o arquivo existe
-    if not os.path.exists(filepath):
-        await ctx.send(f"Arquivo não encontrado: `{filepath}`")
-        return
+    # if not os.path.exists(filepath):
+    #     await ctx.send(f"Arquivo não encontrado: `{filepath}`")
+    #     return
 
-    try:
-        voice_client = await voice_channel.connect()
-    except discord.ClientException:
-        voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+    voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+
+    # Verifica se o cliente de voz está conectado
+    if voice_client is None or not voice_client.is_connected():
+        try:
+            voice_client = await voice_channel.connect()
+        except discord.ClientException:
+            voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
 
     if voice_client is None:
         await ctx.send("Falha ao conectar ao canal de voz.")
@@ -313,7 +314,7 @@ async def tocar(ctx, *, filepath: str, voice_channel=None):
     # Reproduz o áudio usando FFmpeg
     try:
         if not voice_client.is_playing():
-            source = discord.FFmpegPCMAudio(filepath)
+            source = discord.FFmpegOpusAudio(filepath)
             voice_client.play(source, after=lambda e: print(f"Erro: {e}") if e else None)
             await ctx.send(f"Tocando: `{os.path.basename(filepath)}`")
 
@@ -322,7 +323,7 @@ async def tocar(ctx, *, filepath: str, voice_channel=None):
                 await asyncio.sleep(1)
 
         # Desconecta após a reprodução
-        await voice_client.disconnect()
+        #await voice_client.disconnect()
     except Exception as e:
         await ctx.send(f"Ocorreu um erro ao tocar o arquivo: {e}")
         if voice_client:
