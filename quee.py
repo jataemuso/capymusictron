@@ -14,6 +14,24 @@ import fair_queue
 indice_nao_baixado = None
 tocando_agora = None
 
+# Configurações iniciais do bot
+TOKEN = "***REMOVED***"  # Use uma variável de ambiente para o token
+PREFIX = '?'
+FILA_TUDO = []
+
+server_info = {}
+
+def add_server(server_id):
+    """Adiciona um servidor ao dicionário server_info, se não estiver presente."""
+    if server_id not in server_info:
+        server_info[server_id] = {
+            'skip': set(),
+            'fila_tudo': [],
+            'nao_baixado': [],
+            'tocando_agora': None,
+            'canal': None,
+        }
+
 DOWNLOADS_FOLDER = 'downloads'
 
 if os.path.exists(DOWNLOADS_FOLDER):
@@ -77,11 +95,6 @@ async def gatekeeper_tocar():
 
 
 
-# Configurações iniciais do bot
-TOKEN = "***REMOVED***"  # Use uma variável de ambiente para o token
-PREFIX = '?'
-QUEUE_FILE = 'music_queue.json'
-FILA_TUDO = []
 
 # Criação do bot
 intents = discord.Intents.default()
@@ -187,22 +200,59 @@ async def show_queue(ctx):
         await ctx.send(msg)
 
 @bot.command(name='skip')
-async def skip(ctx):
-    # Obtém o cliente de voz ativo
-    voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    
-    if voice_client and voice_client.is_connected():
-        if voice_client.is_playing():
-            voice_client.stop()  # Para a reprodução do áudio
-            await ctx.send("Reprodução parada.")
+async def skip(ctx, forceskip=False):
+    global tocando_agora
+    guild_id = ctx.guild.id
+    user = ctx.author.name
+
+    if ctx.author.voice is None:
+        await ctx.send("Você precisa estar em um canal de voz para usar skip.")
+        return
+
+    voice_channel = ctx.guild.get_channel(tocando_agora["voice_channel_id"])
+    ouvintes = [m for m in voice_channel.members if not m.bot]
+    votos_necessarios = max(1, len(ouvintes) // 2)
+
+    if not (tocando_agora["added_by"] == user or forceskip):
+
+        if user in server_info[guild_id]['skip']:
+            await ctx.send("Você não pode votar mais de uma vez.")
+
         else:
-            await ctx.send("Nenhum áudio está sendo reproduzido no momento.")
+            server_info[guild_id]['skip'].add(user)
+            await ctx.send(f"Voto registrado: {len(server_info[guild_id]['skip'])} de {votos_necessarios}")
+
+
+    if tocando_agora["added_by"] == user or len(server_info[guild_id]['skip']) >= votos_necessarios or forceskip:
+
+        # Obtém o cliente de voz ativo
+        voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
         
-        # Desconecta do canal de voz, se desejado
-        await voice_client.disconnect()
-        await ctx.send("Bot desconectado do canal de voz.")
-    else:
-        await ctx.send("O bot não está conectado a nenhum canal de voz.")
+        if voice_client and voice_client.is_connected():
+            if voice_client.is_playing():
+                voice_client.stop()
+                await ctx.send("Música pulada.")
+            else:
+                await ctx.send("Nenhum áudio está sendo reproduzido no momento.")
+            
+        server_info[guild_id]['skip'] = set()
+
+@bot.command(name='forceskip')
+async def forceskip(ctx):
+    voice_channel = canal_usuario(ctx)
+    cargo_permitido_id = 1145158831052177428
+
+    # Verifica se o autor do comando tem o cargo específico
+    if cargo_permitido_id not in [role.id for role in ctx.author.roles]:
+        # Se o usuário não tiver o cargo, envia uma mensagem e retorna
+        await ctx.send("Você não tem permissão para usar este comando!")
+        return
+
+    if voice_channel is None:
+        await ctx.send("Você não pode usar esse comando fora de um canal de voz.")
+        return
+    
+    await skip(ctx, forceskip=True)
 
 @bot.command(name='clear')
 async def clear(ctx):
@@ -329,9 +379,29 @@ async def tocar(ctx, *, filepath: str, voice_channel=None):
         if voice_client:
             await voice_client.disconnect()
 
+
+@bot.event
+async def on_guild_join(guild):
+    print(f"Novo servidor: {guild.name} (ID: {guild.id})")
+    add_server(guild.id)
+
+@bot.event
+async def on_guild_remove(guild):
+    print(f"Sai do servidor: {guild.name} (ID: {guild.id})")
+    #TODO:
+
+
 @bot.event
 async def on_ready():
     print(f'{bot.user} está online e pronto para uso!')
+
+    print(f"Estou em {len(bot.guilds)} servidores.")
+    
+    for guild in bot.guilds:
+        add_server(guild.id)
+        print(f"Servidor adicionado: {guild.name} (ID: {guild.id})")
+
+    print("Todos os servidores foram carregados!")
     
     # Inicia a tarefa assíncrona para monitorar o fim da música
     bot.loop.create_task(gatekeeper())
