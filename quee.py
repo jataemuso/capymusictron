@@ -27,9 +27,10 @@ def add_server(server_id):
         server_info[server_id] = {
             'skip': set(),
             'fila_tudo': [],
-            'nao_baixado': [],
+            'indice_nao_baixado': None,
             'tocando_agora': None,
             'canal': None,
+            'ctx': None
         }
 
 DOWNLOADS_FOLDER = 'downloads'
@@ -39,59 +40,114 @@ if os.path.exists(DOWNLOADS_FOLDER):
         print("Pasta de downloads apagada.")
 
 
-def canal_usuario(ctx):
+def servidor_e_canal_usuario(ctx):
+    guild_id = ctx.guild.id
+    server_info[guild_id]['ctx'] = ctx
     if ctx.author.voice and ctx.author.voice.channel:
         channel = ctx.author.voice.channel.id
     else: 
         print("sem canal")
         channel = None
     print(channel)
-    return channel
+    return guild_id, channel
 
 
 async def gatekeeper():
     while True:
-        global FILA_TUDO
-        global indice_nao_baixado
 
-        if not FILA_TUDO == []:
-            FILA_TUDO = fair_queue.order_list(FILA_TUDO)
+        for server_id, server in server_info.items():
+            fila_tudo = server['fila_tudo']
+            idx_nao_baixado = server['indice_nao_baixado']
 
-            if not all(item.get('downloaded') == True for item in FILA_TUDO[:1]):
-                indice_nao_baixado = None
-                if FILA_TUDO is not None:
-                    indice_nao_baixado = next(
-                    (i for i, item in enumerate(FILA_TUDO) if isinstance(item, dict) and item.get("downloaded") is False),
+            if len(fila_tudo) > 0:
+                fila_tudo = fair_queue.order_list(fila_tudo)
+                server_info[server_id]['fila_tudo'] = fila_tudo #TODO: verificar se essa linha é necessaria
+
+            if not all(item.get('downloaded') == True for item in fila_tudo[:1]):
+                idx_nao_baixado = None
+                if fila_tudo is not None:
+                    idx_nao_baixado = next(
+                    (i for i, item in enumerate(fila_tudo) if isinstance(item, dict) and item.get("downloaded") is False),
                     None
                 )
-                    if indice_nao_baixado is not None: print(indice_nao_baixado)
-            if indice_nao_baixado is not None:
-                search = FILA_TUDO[indice_nao_baixado]["title"]
-                channel = bot.get_channel(1097966285419204649)  # Canal de notificações
-                ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))  # Baseado em mensagem fixa
-                await reproduce(ctx, search=search)
+                    if idx_nao_baixado is not None: print(idx_nao_baixado)
+
+            if idx_nao_baixado is not None:
+                server['indice_nao_baixado'] = idx_nao_baixado
+                search = fila_tudo[idx_nao_baixado]["title"]
+                # channel = bot.get_channel(1097966285419204649)  # Canal de notificações
+                # ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))  # Baseado em mensagem fixa
+                ctx = server['ctx']
+                await reproduce(ctx, search=search, servidor=server)
                 await asyncio.sleep(0.001) # não remover, quebra o codigo
-                FILA_TUDO[indice_nao_baixado]["downloaded"] = True
-                indice_nao_baixado = None
+                server_info[server_id]['fila_tudo'][idx_nao_baixado]["downloaded"] = True
+                server_info[server_id]['indice_nao_baixado'] = None
             else:
                 pass
 
-        
-        await asyncio.sleep(1)  # Verifica a cada 1 segundo
+            
+            await asyncio.sleep(1)  # Verifica a cada 1 segundo
 
 async def gatekeeper_tocar():
-    global tocando_agora
-    while True:
-        if len(FILA_TUDO) > 0 and FILA_TUDO[0]['downloaded'] == True:
-            channel = bot.get_channel(1097966285419204649)
-            ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))
-            musica = FILA_TUDO.pop(0)
-            voice_channel = ctx.guild.get_channel(musica["voice_channel_id"])
-            tocando_agora = musica
-            await tocar(ctx, filepath=musica['filepath'], voice_channel=voice_channel)
-            tocando_agora = None
+    tasks = {}
 
+    while True:
+        for server_id, server in server_info.items():
+            if server_id not in tasks or tasks[server_id].done():
+                # Inicia uma nova tarefa para o servidor, caso não exista ou esteja concluída
+                tasks[server_id] = asyncio.create_task(processar_fila_servidor(server_id))
+
+        # Aguarda um tempo antes de verificar novamente
         await asyncio.sleep(2)
+
+async def processar_fila_servidor(server_id):
+    server = server_info[server_id]
+    while True:
+        fila_tudo = server['fila_tudo']
+        tocando_agora = server['tocando_agora']
+
+        if len(fila_tudo) > 0 and fila_tudo[0]['downloaded'] == True:
+            musica = fila_tudo.pop(0)
+            ctx = server['ctx']
+            voice_channel = ctx.guild.get_channel(musica["voice_channel_id"])
+
+            # Atualiza o estado e toca a música
+            server['tocando_agora'] = musica
+            await tocar(ctx, filepath=musica['filepath'], voice_channel=voice_channel, server_id=server_id)
+            server['tocando_agora'] = None
+        else:
+            # Sai do loop se a fila estiver vazia
+            break
+
+async def tocar(ctx, *, filepath: str, voice_channel=None, server_id=None):
+    voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+
+    if voice_client is None or not voice_client.is_connected():
+        try:
+            voice_client = await voice_channel.connect()
+        except discord.ClientException:
+            voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+
+    if voice_client is None:
+        await ctx.send("Falha ao conectar ao canal de voz.")
+        return
+
+    try:
+        if not voice_client.is_playing():
+            source = discord.FFmpegOpusAudio(filepath)
+            voice_client.play(source, after=lambda e: print(f"Erro: {e}") if e else None)
+            await ctx.send(f"Tocando: `{os.path.basename(filepath)}`")
+
+            while voice_client.is_playing():
+                await asyncio.sleep(1)
+
+        # Desconecta após a reprodução
+        await voice_client.disconnect()
+    except Exception as e:
+        await ctx.send(f"Ocorreu um erro ao tocar o arquivo: {e}")
+        if voice_client:
+            await voice_client.disconnect()
+
 
 
 
@@ -105,27 +161,26 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 
 
 @bot.command(name='play')
-async def play(ctx, *, search: str, user=None):
-    global FILA_TUDO
+async def play(ctx, *, search: str, user=None): #DEBUG 
     user = ctx.author.name
-    canal = canal_usuario(ctx)
+    servidor, canal = servidor_e_canal_usuario(ctx)
     if canal is None:
-        ctx.send(f'Você não pode adicionar músicas enquanto fora de um canal!')
+        await ctx.send(f'Você não pode adicionar músicas enquanto fora de um canal!')
         return
 
     await ctx.send(f'Pesquisando por: {search}...')
     if 'playlist' in search:
         playlist = get_playlist_titles(search)
         for musica in playlist:
-            FILA_TUDO.append({"title": musica, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
-            print(FILA_TUDO)
+            server_info[servidor]['fila_tudo'].append({"title": musica, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
+            print(server_info[servidor]['fila_tudo'])
     else:
-        if FILA_TUDO is None:
-            FILA_TUDO = []  # Re-inicializa como uma lista vazia, caso seja None
-        FILA_TUDO.append({"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
-        print(FILA_TUDO)
+        if server_info[servidor]['fila_tudo'] is None:
+            server_info[servidor]['fila_tudo'] = []  # Re-inicializa como uma lista vazia, caso seja None
+        server_info[servidor]['fila_tudo'].append({"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
+        print(server_info[servidor]['fila_tudo'])
 
-async def reproduce(ctx, *, search: str):
+async def reproduce(ctx, *, search: str, servidor): #TODO
     #await ctx.send(f'Pesquisando por: {search}...')
     ydl_opts = {
         'format': 'bestaudio[ext=webp]/bestaudio',  # Apenas áudio
@@ -133,7 +188,7 @@ async def reproduce(ctx, *, search: str):
         'quiet': True,
         'default_search': 'ytsearch',  # Busca no YouTube automaticamente
         'noplaylist': False,  # Permite o download da playlist
-        'progress_hooks': [lambda d: asyncio.run_coroutine_threadsafe(on_download_complete(d, ctx), bot.loop)]  # Chama função ao finalizar download
+        'progress_hooks': [lambda d: asyncio.run_coroutine_threadsafe(on_download_complete(d, ctx, servidor), bot.loop)]  # Chama função ao finalizar download
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -153,7 +208,7 @@ async def reproduce(ctx, *, search: str):
             await ctx.send(f"Ocorreu um erro ao baixar a música: {e}")
 
 # Função de callback para quando o download for concluído
-async def on_download_complete(d, ctx):
+async def on_download_complete(d, ctx, servidor): #TODO
     if d['status'] == 'finished':
         # Obtém o título e o caminho do arquivo corretamente
         title = d.get('info_dict', {}).get('title', 'Título desconhecido')
@@ -163,12 +218,13 @@ async def on_download_complete(d, ctx):
         # Adiciona à fila e envia mensagem
         global indice_nao_baixado
         infomacoes = {"real_title": title, "url": url, "filepath": filepath}
-        FILA_TUDO[indice_nao_baixado].update(infomacoes)
+        idx = servidor['indice_nao_baixado']
+        servidor['fila_tudo'][idx].update(infomacoes)
 
 
 
 @bot.command(name='queue')
-async def show_queue(ctx):
+async def show_queue(ctx): #TODO
     global tocando_agora
 
     if len(FILA_TUDO) == 0:
@@ -199,7 +255,7 @@ async def show_queue(ctx):
     for msg in messages:
         await ctx.send(msg)
 
-@bot.command(name='skip')
+@bot.command(name='skip') #TODO
 async def skip(ctx, forceskip=False):
     global tocando_agora
     guild_id = ctx.guild.id
@@ -237,9 +293,9 @@ async def skip(ctx, forceskip=False):
             
         server_info[guild_id]['skip'] = set()
 
-@bot.command(name='forceskip')
+@bot.command(name='forceskip') #TODO
 async def forceskip(ctx):
-    voice_channel = canal_usuario(ctx)
+    servidor, servidor, voice_channel = servidor_e_canal_usuario(ctx)
     cargo_permitido_id = 1145158831052177428
 
     # Verifica se o autor do comando tem o cargo específico
@@ -283,11 +339,11 @@ async def remove_from_queue(ctx, index: int):
 
     await ctx.send(f'Removido da fila: **{removed_song["title"]}**')
 
-@bot.command(name='playnext')
+@bot.command(name='playnext') #DEBUG
 async def play_next(ctx, *, search: str):
     # ID do cargo que você quer verificar
     cargo_permitido_id = 1145158831052177428
-    voice_channel = canal_usuario(ctx)
+    servidor, voice_channel = servidor_e_canal_usuario(ctx)
 
 
     # Verifica se o autor do comando tem o cargo específico
@@ -304,7 +360,7 @@ async def play_next(ctx, *, search: str):
     user = ctx.author.name
 
     # Adiciona a música à fila
-    FILA_TUDO.insert(0, {"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': True, 'voice_channel_id': voice_channel})
+    server_info[servidor]['fila_tudo'].insert(0, {"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': True, 'voice_channel_id': voice_channel})
     await ctx.send(f'A música "{search}" foi adicionada como próxima na fila!')
 
 
@@ -322,8 +378,8 @@ async def move_song(ctx, from_index: int, to_index: int):
     await ctx.send(f'Movido: **{song["title"]}** para a posição {to_index}')
 
 @bot.command(name='radio')
-async def criar_radio(ctx, *, search: str, user=None):
-    canal = canal_usuario(ctx)
+async def criar_radio(ctx, *, search: str, user=None): #DEBUG
+    servidor, canal = servidor_e_canal_usuario(ctx)
     if canal is None:
         await ctx.send('Você não pode criar rádios sem estar em um canal de voz.')
         return
@@ -334,50 +390,7 @@ async def criar_radio(ctx, *, search: str, user=None):
 
     for music in radio_playlist["tracks"]:
         title = f"{music['title']} - {music['artists'][0]['name']}"
-        FILA_TUDO.append({"title": title, "added_by": user, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
-
-async def tocar(ctx, *, filepath: str, voice_channel=None):
-    """
-    Toca um arquivo MP3 diretamente em um canal de voz.
-    Args:
-        ctx: Contexto do comando.
-        filepath (str): Caminho para o arquivo MP3.
-    """
-    # Verifica se o arquivo existe
-    # if not os.path.exists(filepath):
-    #     await ctx.send(f"Arquivo não encontrado: `{filepath}`")
-    #     return
-
-    voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-
-    # Verifica se o cliente de voz está conectado
-    if voice_client is None or not voice_client.is_connected():
-        try:
-            voice_client = await voice_channel.connect()
-        except discord.ClientException:
-            voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-
-    if voice_client is None:
-        await ctx.send("Falha ao conectar ao canal de voz.")
-        return
-
-    # Reproduz o áudio usando FFmpeg
-    try:
-        if not voice_client.is_playing():
-            source = discord.FFmpegOpusAudio(filepath)
-            voice_client.play(source, after=lambda e: print(f"Erro: {e}") if e else None)
-            await ctx.send(f"Tocando: `{os.path.basename(filepath)}`")
-
-            # Aguarda enquanto o áudio está sendo reproduzido
-            while voice_client.is_playing():
-                await asyncio.sleep(1)
-
-        # Desconecta após a reprodução
-        #await voice_client.disconnect()
-    except Exception as e:
-        await ctx.send(f"Ocorreu um erro ao tocar o arquivo: {e}")
-        if voice_client:
-            await voice_client.disconnect()
+        server_info[servidor]['fila_tudo'].append({"title": title, "added_by": user, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
 
 
 @bot.event
