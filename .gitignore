@@ -6,3 +6,4 @@
 /__pycache__
 /downloads
 /music_queue.json
+server_config.json

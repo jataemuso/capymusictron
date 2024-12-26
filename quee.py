@@ -9,31 +9,35 @@ import shutil
 from radio import gerar_radio
 from playlist_extrator import get_playlist_titles
 import fair_queue
+import server_config_manager
 # Função para monitorar o fim da música
 
-indice_nao_baixado = None
-tocando_agora = None
 
 # Configurações iniciais do bot
 TOKEN = "***REMOVED***"  # Use uma variável de ambiente para o token
 PREFIX = '?'
 FILA_TUDO = []
-
+DOWNLOADS_FOLDER = 'downloads'
 server_info = {}
+server_config = server_config_manager.load_servers()
 
-def add_server(server_id):
+def add_server(server_id, owner=None, admins=None):
     """Adiciona um servidor ao dicionário server_info, se não estiver presente."""
     if server_id not in server_info:
         server_info[server_id] = {
+            'owner': owner,
+            'admins': admins,
             'skip': set(),
             'fila_tudo': [],
             'indice_nao_baixado': None,
             'tocando_agora': None,
             'canal': None,
-            'ctx': None
+            'ctx': None,
+            'dj_id': None
         }
+    server_config_manager.add_server(server_config, str(server_id))
+    server_config_manager.save_servers(server_config)
 
-DOWNLOADS_FOLDER = 'downloads'
 
 if os.path.exists(DOWNLOADS_FOLDER):
         shutil.rmtree(DOWNLOADS_FOLDER)  # Apaga a pasta de downloads e seu conteúdo
@@ -46,10 +50,24 @@ def servidor_e_canal_usuario(ctx):
     if ctx.author.voice and ctx.author.voice.channel:
         channel = ctx.author.voice.channel.id
     else: 
-        print("sem canal")
         channel = None
-    print(channel)
     return guild_id, channel
+
+async def permissao(ctx):
+    guild_id = ctx.guild.id
+    user = ctx.author
+    server = server_info[guild_id]
+
+    if user.id == REMOVIDO:
+        return 4  # Permissão Owner do bot
+    if user.id == ctx.guild.owner_id:
+        return 3  # Permissão Owner do servidor
+    if any(role.permissions.administrator for role in user.roles):
+        return 2  # Permissão Administrador
+    if server_config[str(guild_id)]['id_dj'] in [role.id for role in user.roles]:
+        return 1  # Permissão DJ
+    return 0  # Sem permissão
+
 
 
 async def gatekeeper():
@@ -115,6 +133,7 @@ async def processar_fila_servidor(server_id):
             server['tocando_agora'] = musica
             await tocar(ctx, filepath=musica['filepath'], voice_channel=voice_channel, server_id=server_id)
             server['tocando_agora'] = None
+            os.remove(musica['filepath'])
         else:
             # Sai do loop se a fila estiver vazia
             break
@@ -155,10 +174,56 @@ async def tocar(ctx, *, filepath: str, voice_channel=None, server_id=None):
 # Criação do bot
 intents = discord.Intents.default()
 intents.message_content = True  # Habilita a leitura do conteúdo das mensagens
+intents.members = True
 bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 
 
+@bot.command(name="removedj")
+async def removedj(ctx):
+    if permissao(ctx) < 2:
+        await ctx.send('Você não tem permissão de usar esse comando!')
+        return
+    servidor, *_ = servidor_e_canal_usuario(ctx)
+    server_config_manager.update_server(server_config, str(servidor), id_dj=None)
+    server_config_manager.save_servers(server_config)
+    await ctx.send("Cargo DJ removido!")
 
+
+@bot.command(name="setdj")
+async def setdj(ctx, *, role_input: str):
+    if permissao(ctx) < 2:
+        await ctx.send('Você não tem permissão de usar esse comando!')
+        return
+    servidor, *_ = servidor_e_canal_usuario(ctx)
+    role = None
+    if role_input.isdigit():
+        role = ctx.guild.get_role(int(role_input))
+    
+    if not role and role_input:
+        role = discord.utils.get(ctx.guild.roles, name=role_input)
+
+    if role:
+        await ctx.send(f"O cargo {role.name} foi definido como DJ!")
+        server_info[servidor]['dj_id'] = role
+        server_config_manager.update_server(server_config, str(servidor), id_dj=role.id)
+        server_config_manager.save_servers(server_config)
+    else:
+        await ctx.send("Não foi possível encontrar esse cargo.")
+
+
+@bot.command(name="checkpermissao")
+async def checkpermissao(ctx):
+    perm = await permissao(ctx)
+    if perm == 1:
+        await ctx.send("Você tem permissão como DJ!")
+    elif perm == 2:
+        await ctx.send("Você tem permissão como Administrador!")
+    elif perm == 3:
+        await ctx.send("Você é o dono do servidor!")
+    elif perm == 4:
+        await ctx.send("Você é o dono do bot!")
+    else:
+        await ctx.send("Você não tem permissões especiais.")
 
 @bot.command(name='play')
 async def play(ctx, *, search: str, user=None): #DEBUG 
@@ -224,10 +289,12 @@ async def on_download_complete(d, ctx, servidor): #TODO
 
 
 @bot.command(name='queue')
-async def show_queue(ctx): #TODO
-    global tocando_agora
+async def show_queue(ctx): 
+    servidor, *_ = servidor_e_canal_usuario(ctx)
+    tocando_agora = server_info[servidor]['tocando_agora']
+    fila_tudo = server_info[servidor]['fila_tudo']
 
-    if len(FILA_TUDO) == 0:
+    if len(fila_tudo) == 0:
         await ctx.send('A fila está vazia.')
         return
 
@@ -239,7 +306,7 @@ async def show_queue(ctx): #TODO
         current_message += f"Reproduzindo: {tocando_agora['real_title']}\n"
 
     # Adiciona músicas da fila armazenada no arquivo
-    for song in FILA_TUDO:
+    for song in fila_tudo:
         line = f'{idx + 1}. {song["title"]}\n'
         if len(current_message) + len(line) > 2000:
             messages.append(current_message)
@@ -255,21 +322,26 @@ async def show_queue(ctx): #TODO
     for msg in messages:
         await ctx.send(msg)
 
-@bot.command(name='skip') #TODO
-async def skip(ctx, forceskip=False):
-    global tocando_agora
+@bot.command(name='skip')
+async def skip(ctx, forceskip=False, commandStop=False):
+    servidor_e_canal_usuario(ctx=ctx)
     guild_id = ctx.guild.id
     user = ctx.author.name
+    tocando_agora = server_info[guild_id]['tocando_agora']
 
     if ctx.author.voice is None:
         await ctx.send("Você precisa estar em um canal de voz para usar skip.")
         return
-
+    
+    if not tocando_agora:
+        await ctx.send("Nenhuma música sendo tocada no momento")
+        return
+    
     voice_channel = ctx.guild.get_channel(tocando_agora["voice_channel_id"])
     ouvintes = [m for m in voice_channel.members if not m.bot]
     votos_necessarios = max(1, len(ouvintes) // 2)
 
-    if not (tocando_agora["added_by"] == user or forceskip):
+    if not (tocando_agora["added_by"] == user or forceskip or commandStop):
 
         if user in server_info[guild_id]['skip']:
             await ctx.send("Você não pode votar mais de uma vez.")
@@ -279,7 +351,7 @@ async def skip(ctx, forceskip=False):
             await ctx.send(f"Voto registrado: {len(server_info[guild_id]['skip'])} de {votos_necessarios}")
 
 
-    if tocando_agora["added_by"] == user or len(server_info[guild_id]['skip']) >= votos_necessarios or forceskip:
+    if tocando_agora["added_by"] == user or len(server_info[guild_id]['skip']) >= votos_necessarios or forceskip or commandStop:
 
         # Obtém o cliente de voz ativo
         voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
@@ -287,7 +359,8 @@ async def skip(ctx, forceskip=False):
         if voice_client and voice_client.is_connected():
             if voice_client.is_playing():
                 voice_client.stop()
-                await ctx.send("Música pulada.")
+                if not commandStop:
+                    await ctx.send("Música pulada.")
             else:
                 await ctx.send("Nenhum áudio está sendo reproduzido no momento.")
             
@@ -295,13 +368,9 @@ async def skip(ctx, forceskip=False):
 
 @bot.command(name='forceskip') #TODO
 async def forceskip(ctx):
-    servidor, servidor, voice_channel = servidor_e_canal_usuario(ctx)
-    cargo_permitido_id = 1145158831052177428
-
-    # Verifica se o autor do comando tem o cargo específico
-    if cargo_permitido_id not in [role.id for role in ctx.author.roles]:
-        # Se o usuário não tiver o cargo, envia uma mensagem e retorna
-        await ctx.send("Você não tem permissão para usar este comando!")
+    servidor, voice_channel = servidor_e_canal_usuario(ctx)
+    if permissao(ctx) < 1:
+        await ctx.send('Você não tem permissão de usar esse comando!')
         return
 
     if voice_channel is None:
@@ -310,47 +379,59 @@ async def forceskip(ctx):
     
     await skip(ctx, forceskip=True)
 
-@bot.command(name='clear')
-async def clear(ctx):
-        global FILA_TUDO
-        FILA_TUDO = []
+@bot.command(name='clear') #TODO verificar permissões e atualizar filatudo
+async def clear(ctx, commandStop=False):
+        if permissao(ctx) < 1:
+            await ctx.send('Você não tem permissão de usar esse comando!')
+            return
+        servidor, *_ = servidor_e_canal_usuario(ctx)
+        server_info[servidor]['fila_tudo'] = []
+        if not commandStop:
+            await ctx.send("Fila limpa!")
 
-@bot.command(name='stop')
+@bot.command(name='stop') 
 async def stop(ctx):
-    await skip(ctx)
-    await clear(ctx)
+    if permissao(ctx) < 1:
+        await ctx.send('Você não tem permissão de usar esse comando!')
+        return
+    await skip(ctx, commandStop=True)
+    await clear(ctx, commandStop=True)
 
 
 
 @bot.command(name='shuffle')
 async def shuffle_queue(ctx):
-    random.shuffle(FILA_TUDO)
+    servidor, *_ = servidor_e_canal_usuario(ctx)
+    random.shuffle(server_info[servidor]['fila_tudo'])
     await ctx.send('A fila foi embaralhada.')
 
 @bot.command(name='remove')
 async def remove_from_queue(ctx, index: int):
-    global FILA_TUDO
+    servidor, *_ = servidor_e_canal_usuario(ctx)
+    fila_tudo = server_info[servidor]['fila_tudo']
+    
 
-    if index < 1 or index > len(FILA_TUDO):
+    if index < 1 or index > len(fila_tudo):
         await ctx.send('Índice inválido. Certifique-se de fornecer um número válido.')
         return
+    
+    if (permissao() < 1) and (not ctx.author.name == fila_tudo[index]['added_by']):
+        await ctx.send('Você não tem permissão de usar esse comando!')
+        return
 
-    removed_song = FILA_TUDO.pop(index - 1)
+    removed_song = fila_tudo.pop(index - 1)
 
     await ctx.send(f'Removido da fila: **{removed_song["title"]}**')
 
-@bot.command(name='playnext') #DEBUG
+@bot.command(name='playnext') 
 async def play_next(ctx, *, search: str):
     # ID do cargo que você quer verificar
-    cargo_permitido_id = 1145158831052177428
     servidor, voice_channel = servidor_e_canal_usuario(ctx)
 
 
-    # Verifica se o autor do comando tem o cargo específico
-    if cargo_permitido_id not in [role.id for role in ctx.author.roles]:
-        # Se o usuário não tiver o cargo, envia uma mensagem e retorna
-        await ctx.send("Você não tem permissão para usar este comando!")
-        return
+    if permissao(ctx) < 1:
+            await ctx.send('Você não tem permissão de usar esse comando!')
+            return
 
     if voice_channel is None:
         await ctx.send("Você não pode usar esse comando fora de um canal de voz.")
@@ -366,19 +447,24 @@ async def play_next(ctx, *, search: str):
 
 @bot.command(name='move')
 async def move_song(ctx, from_index: int, to_index: int):
-    global FILA_TUDO
+    servidor, *_ = servidor_e_canal_usuario(ctx)
+    fila_tudo = server_info[servidor]['fila_tudo']
 
-    if from_index < 1 or from_index > len(FILA_TUDO) or to_index < 1 or to_index > len(FILA_TUDO):
+    if (permissao(ctx)) < 1 and (not (fila_tudo[from_index]['added_by'] == ctx.author.name) and (fila_tudo[to_index]['added_by'] == ctx.author.name)):
+        await ctx.send('Você não tem permissão de usar esse comando!')
+        return
+
+    if from_index < 1 or from_index > len(fila_tudo) or to_index < 1 or to_index > len(fila_tudo):
         await ctx.send('Índices inválidos. Certifique-se de fornecer números válidos.')
         return
 
-    song = FILA_TUDO.pop(from_index - 1)
-    FILA_TUDO.insert(to_index - 1, song)
+    song = fila_tudo.pop(from_index - 1)
+    fila_tudo.insert(to_index - 1, song)
 
     await ctx.send(f'Movido: **{song["title"]}** para a posição {to_index}')
 
 @bot.command(name='radio')
-async def criar_radio(ctx, *, search: str, user=None): #DEBUG
+async def criar_radio(ctx, *, search: str, user=None):
     servidor, canal = servidor_e_canal_usuario(ctx)
     if canal is None:
         await ctx.send('Você não pode criar rádios sem estar em um canal de voz.')
@@ -401,24 +487,49 @@ async def on_guild_join(guild):
 @bot.event
 async def on_guild_remove(guild):
     print(f"Sai do servidor: {guild.name} (ID: {guild.id})")
-    #TODO:
+    #IDEIA: mandar mesagem para o dono do servidor, talvez pedindo um feedbeck
 
 
 @bot.event
 async def on_ready():
     print(f'{bot.user} está online e pronto para uso!')
-
     print(f"Estou em {len(bot.guilds)} servidores.")
     
     for guild in bot.guilds:
-        add_server(guild.id)
-        print(f"Servidor adicionado: {guild.name} (ID: {guild.id})")
+        try:
+            # Busca o dono do servidor diretamente
+            owner = await guild.fetch_member(guild.owner_id)
 
-    print("Todos os servidores foram carregados!")
+            # Força o carregamento de todos os membros da guilda
+            await guild.chunk()  # Isso vai garantir que todos os membros sejam carregados
+
+            # Pega todos os administradores (membros com cargos de admin)
+            admins = []
+            membros = guild.members  # Agora, guild.members deve estar completamente carregado
+
+            for member in membros:
+                if member != bot.user:  # Ignorar o bot
+                    for role in member.roles:
+                        # Verifica se o cargo tem a permissão de administrador
+                        if role.permissions.administrator:
+                            admins.append(member)
+                            break  # Encontrou um cargo com permissão de admin, não precisa continuar verificando outros cargos
+
+            # Chama a função add_server passando o dono e os administradores
+            add_server(guild.id, owner=owner, admins=admins)
+            
+            # Log para debug
+            print(f"Servidor adicionado: {guild.name} (ID: {guild.id}, owner: {owner.name}#{owner.discriminator})")
+            print(f"Administradores encontrados: {[admin.name for admin in admins]}")
+        except Exception as e:
+            print(f"Erro ao buscar o dono do servidor {guild.name}: {e}")
     
-    # Inicia a tarefa assíncrona para monitorar o fim da música
+    print("Todos os servidores foram carregados!")
+
+    # Inicialize outras tarefas que não bloqueiam a execução do restante do bot
     bot.loop.create_task(gatekeeper())
     bot.loop.create_task(gatekeeper_tocar())
+
 
 
 # Inicia o bot
