@@ -10,6 +10,7 @@ from radio import gerar_radio
 from playlist_extrator import get_playlist_titles
 import fair_queue
 import server_config_manager
+import utils
 # Função para monitorar o fim da música
 
 
@@ -79,7 +80,7 @@ async def gatekeeper():
 
             if len(fila_tudo) > 0:
                 fila_tudo = fair_queue.order_list(fila_tudo)
-                server_info[server_id]['fila_tudo'] = fila_tudo #TODO: verificar se essa linha é necessaria
+                server_info[server_id]['fila_tudo'] = fila_tudo 
 
             if not all(item.get('downloaded') == True for item in fila_tudo[:1]):
                 idx_nao_baixado = None
@@ -93,8 +94,6 @@ async def gatekeeper():
             if idx_nao_baixado is not None:
                 server['indice_nao_baixado'] = idx_nao_baixado
                 search = fila_tudo[idx_nao_baixado]["title"]
-                # channel = bot.get_channel(1097966285419204649)  # Canal de notificações
-                # ctx = await bot.get_context(await channel.fetch_message(1319064488200245319))  # Baseado em mensagem fixa
                 ctx = server['ctx']
                 await reproduce(ctx, search=search, servidor=server)
                 await asyncio.sleep(0.001) # não remover, quebra o codigo
@@ -104,7 +103,7 @@ async def gatekeeper():
                 pass
 
             
-            await asyncio.sleep(1)  # Verifica a cada 1 segundo
+            await asyncio.sleep(1) 
 
 async def gatekeeper_tocar():
     tasks = {}
@@ -155,7 +154,6 @@ async def tocar(ctx, *, filepath: str, voice_channel=None, server_id=None):
         if not voice_client.is_playing():
             source = discord.FFmpegOpusAudio(filepath)
             voice_client.play(source, after=lambda e: print(f"Erro: {e}") if e else None)
-            await ctx.send(f"Tocando: `{os.path.basename(filepath)}`")
 
             while voice_client.is_playing():
                 await asyncio.sleep(1)
@@ -180,7 +178,7 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 
 @bot.command(name="removedj")
 async def removedj(ctx):
-    if permissao(ctx) < 2:
+    if await permissao(ctx) < 2:
         await ctx.send('Você não tem permissão de usar esse comando!')
         return
     servidor, *_ = servidor_e_canal_usuario(ctx)
@@ -191,7 +189,7 @@ async def removedj(ctx):
 
 @bot.command(name="setdj")
 async def setdj(ctx, *, role_input: str):
-    if permissao(ctx) < 2:
+    if await permissao(ctx) < 2:
         await ctx.send('Você não tem permissão de usar esse comando!')
         return
     servidor, *_ = servidor_e_canal_usuario(ctx)
@@ -233,17 +231,18 @@ async def play(ctx, *, search: str, user=None): #DEBUG
         await ctx.send(f'Você não pode adicionar músicas enquanto fora de um canal!')
         return
 
-    await ctx.send(f'Pesquisando por: {search}...')
+    mensagem = await ctx.send(f'Pesquisando por: {search}...')
     if 'playlist' in search:
         playlist = get_playlist_titles(search)
         for musica in playlist:
             server_info[servidor]['fila_tudo'].append({"title": musica, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
             print(server_info[servidor]['fila_tudo'])
     else:
+        titulo = utils.obter_titulo(search)
         if server_info[servidor]['fila_tudo'] is None:
             server_info[servidor]['fila_tudo'] = []  # Re-inicializa como uma lista vazia, caso seja None
-        server_info[servidor]['fila_tudo'].append({"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
-        print(server_info[servidor]['fila_tudo'])
+        server_info[servidor]['fila_tudo'].append({"title": titulo, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
+        await mensagem.edit(content=f"{titulo} adicionado à fila")
 
 async def reproduce(ctx, *, search: str, servidor): #TODO
     #await ctx.send(f'Pesquisando por: {search}...')
@@ -369,7 +368,7 @@ async def skip(ctx, forceskip=False, commandStop=False):
 @bot.command(name='forceskip') #TODO
 async def forceskip(ctx):
     servidor, voice_channel = servidor_e_canal_usuario(ctx)
-    if permissao(ctx) < 1:
+    if await permissao(ctx) < 1:
         await ctx.send('Você não tem permissão de usar esse comando!')
         return
 
@@ -381,7 +380,7 @@ async def forceskip(ctx):
 
 @bot.command(name='clear') #TODO verificar permissões e atualizar filatudo
 async def clear(ctx, commandStop=False):
-        if permissao(ctx) < 1:
+        if await permissao(ctx) < 1:
             await ctx.send('Você não tem permissão de usar esse comando!')
             return
         servidor, *_ = servidor_e_canal_usuario(ctx)
@@ -391,7 +390,7 @@ async def clear(ctx, commandStop=False):
 
 @bot.command(name='stop') 
 async def stop(ctx):
-    if permissao(ctx) < 1:
+    if await permissao(ctx) < 1:
         await ctx.send('Você não tem permissão de usar esse comando!')
         return
     await skip(ctx, commandStop=True)
@@ -415,7 +414,7 @@ async def remove_from_queue(ctx, index: int):
         await ctx.send('Índice inválido. Certifique-se de fornecer um número válido.')
         return
     
-    if (permissao() < 1) and (not ctx.author.name == fila_tudo[index]['added_by']):
+    if (await permissao() < 1) and (not ctx.author.name == fila_tudo[index]['added_by']):
         await ctx.send('Você não tem permissão de usar esse comando!')
         return
 
@@ -429,7 +428,7 @@ async def play_next(ctx, *, search: str):
     servidor, voice_channel = servidor_e_canal_usuario(ctx)
 
 
-    if permissao(ctx) < 1:
+    if await permissao(ctx) < 1:
             await ctx.send('Você não tem permissão de usar esse comando!')
             return
 
@@ -437,12 +436,13 @@ async def play_next(ctx, *, search: str):
         await ctx.send("Você não pode usar esse comando fora de um canal de voz.")
         return
 
-    await ctx.send(f'Pesquisando por: {search} para adicionar como próxima...')
+    mensagem = await ctx.send(f'Pesquisando por: {search} para adicionar como próxima...')
     user = ctx.author.name
+    titulo = utils.obter_titulo(search)
 
     # Adiciona a música à fila
-    server_info[servidor]['fila_tudo'].insert(0, {"title": search, "added_by": user, "real_title": None, "downloaded": False, 'playnext': True, 'voice_channel_id': voice_channel})
-    await ctx.send(f'A música "{search}" foi adicionada como próxima na fila!')
+    server_info[servidor]['fila_tudo'].insert(0, {"title": titulo, "added_by": user, "real_title": None, "downloaded": False, 'playnext': True, 'voice_channel_id': voice_channel})
+    await mensagem.edit(content=f'A música "{titulo}" foi adicionada como próxima na fila!')
 
 
 @bot.command(name='move')
@@ -450,7 +450,7 @@ async def move_song(ctx, from_index: int, to_index: int):
     servidor, *_ = servidor_e_canal_usuario(ctx)
     fila_tudo = server_info[servidor]['fila_tudo']
 
-    if (permissao(ctx)) < 1 and (not (fila_tudo[from_index]['added_by'] == ctx.author.name) and (fila_tudo[to_index]['added_by'] == ctx.author.name)):
+    if (await permissao(ctx)) < 1 and (not (fila_tudo[from_index]['added_by'] == ctx.author.name) and (fila_tudo[to_index]['added_by'] == ctx.author.name)):
         await ctx.send('Você não tem permissão de usar esse comando!')
         return
 
