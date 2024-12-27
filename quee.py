@@ -34,7 +34,8 @@ def add_server(server_id, owner=None, admins=None):
             'tocando_agora': None,
             'canal': None,
             'ctx': None,
-            'dj_id': None
+            'dj_id': None,
+            'paused': None
         }
     server_config_manager.add_server(server_config, str(server_id))
     server_config_manager.save_servers(server_config)
@@ -137,6 +138,81 @@ async def processar_fila_servidor(server_id):
             # Sai do loop se a fila estiver vazia
             break
 
+def obter_tempo_musica(server_id):
+    """
+    Retorna o tempo atual e o tempo total da música que está sendo reproduzida em um servidor.
+    
+    :param server_id: ID do servidor
+    :return: Tuple (tempo_atual, tempo_total) em segundos ou None se nenhuma música estiver tocando.
+    """
+    if server_id not in server_info:
+        return None
+
+    server = server_info[server_id]
+    tocando_agora = server['tocando_agora']
+    
+    if tocando_agora is None or 'filepath' not in tocando_agora:
+        return None
+
+    # Caminho do arquivo da música
+    filepath = tocando_agora['filepath']
+    
+    # Usar ffprobe para obter a duração total da música
+    try:
+        import subprocess
+        command = [
+            'ffprobe', '-i', filepath,
+            '-show_entries', 'format=duration',
+            '-v', 'quiet', '-of', 'csv=p=0'
+        ]
+        duration = float(subprocess.check_output(command).decode().strip())
+    except Exception as e:
+        print(f"Erro ao obter duração da música: {e}")
+        return None
+
+    # Calcular o tempo atual
+    tempo_atual = tocando_agora.get('tempo_atual', 0)
+    
+    return tempo_atual, duration
+
+
+async def pause(ctx):
+    server_id = ctx.guild.id
+
+    if server_id not in server_info:
+        return "Nenhuma música está sendo reproduzida neste servidor."
+    
+    voice_client = ctx.guild.voice_client
+    if not voice_client or not voice_client.is_playing():
+        return "Nenhuma música está sendo reproduzida no momento."
+
+    if server_info[server_id].get('paused', False):
+        return "A música já está pausada."
+
+    voice_client.pause()
+    server_info[server_id]['paused'] = True
+    return "A música foi pausada com sucesso."
+
+
+async def resume(ctx):
+    server_id = ctx.guild.id
+
+    if server_id not in server_info:
+        return "Nenhuma música está sendo reproduzida neste servidor."
+    
+    voice_client = ctx.guild.voice_client
+    if not voice_client:
+        return "O bot não está conectado a um canal de voz."
+    
+    if not server_info[server_id].get('paused', False):
+        return "A música não está pausada."
+
+    voice_client.resume()
+    server_info[server_id]['paused'] = False
+    return "A música foi retomada com sucesso."
+
+
+
 async def tocar(ctx, *, filepath: str, voice_channel=None, server_id=None):
     voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
 
@@ -153,13 +229,18 @@ async def tocar(ctx, *, filepath: str, voice_channel=None, server_id=None):
     try:
         if not voice_client.is_playing():
             source = discord.FFmpegOpusAudio(filepath)
+            server_info[server_id]['tocando_agora']['tempo_atual'] = 0  # Reseta o tempo
             voice_client.play(source, after=lambda e: print(f"Erro: {e}") if e else None)
 
-            while voice_client.is_playing():
+            # Atualiza o tempo atual da música enquanto toca
+            while voice_client.is_playing() or server_info[server_id].get('paused', False):
                 await asyncio.sleep(1)
+                if not server_info[server_id].get('paused', False):  # Incrementa apenas se não estiver pausado
+                    server_info[server_id]['tocando_agora']['tempo_atual'] += 1
 
-        # Desconecta após a reprodução
-        await voice_client.disconnect()
+        # Desconecta apenas se a música terminou e não está pausada
+        if not server_info[server_id].get('paused', False):
+            await voice_client.disconnect()
     except Exception as e:
         await ctx.send(f"Ocorreu um erro ao tocar o arquivo: {e}")
         if voice_client:
@@ -171,9 +252,36 @@ async def tocar(ctx, *, filepath: str, voice_channel=None, server_id=None):
 
 # Criação do bot
 intents = discord.Intents.default()
-intents.message_content = True  # Habilita a leitura do conteúdo das mensagens
+intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix=PREFIX, intents=intents)
+
+@bot.command(name='tempo')
+async def mostrar_tempo(ctx):
+    servidor, *_ = servidor_e_canal_usuario(ctx)
+    resultado = obter_tempo_musica(servidor)
+    
+    if resultado is None:
+        await ctx.send("Nenhuma música está sendo reproduzida no momento.")
+        return
+    
+    tempo_atual, tempo_total = resultado
+    minutos_atual, segundos_atual = divmod(int(tempo_atual), 60)
+    minutos_total, segundos_total = divmod(int(tempo_total), 60)
+    
+    await ctx.send(f"Tempo atual: {minutos_atual}:{segundos_atual:02d} / {minutos_total}:{segundos_total:02d}")
+@bot.command(name='pause')
+async def comando_pause(ctx):
+    servidor, *_ = servidor_e_canal_usuario(ctx)
+    mensagem = await pause(ctx)
+    await ctx.send(mensagem)
+
+@bot.command(name='resume')
+async def comando_resume(ctx):
+    servidor, *_ = servidor_e_canal_usuario(ctx)
+    mensagem = await resume(ctx)
+    await ctx.send(mensagem)
+
 
 
 @bot.command(name="removedj")
@@ -224,25 +332,49 @@ async def checkpermissao(ctx):
         await ctx.send("Você não tem permissões especiais.")
 
 @bot.command(name='play')
-async def play(ctx, *, search: str, user=None): #DEBUG 
+async def play(ctx, *, search: str = None):
     user = ctx.author.name
     servidor, canal = servidor_e_canal_usuario(ctx)
-    if canal is None:
-        await ctx.send(f'Você não pode adicionar músicas enquanto fora de um canal!')
+
+    if server_info[servidor].get('paused', False):
+        await resume(ctx)
+        if search is None:
+            return
+
+    if search is None:
+        await ctx.send("Por favor, forneça uma música ou link para tocar.")
         return
 
-    mensagem = await ctx.send(f'Pesquisando por: {search}...')
+    if canal is None:
+        await ctx.send("Você não pode adicionar músicas enquanto está fora de um canal!")
+        return
+
+    mensagem = await ctx.send(f"Pesquisando por: {search}...")
     if 'playlist' in search:
         playlist = get_playlist_titles(search)
         for musica in playlist:
-            server_info[servidor]['fila_tudo'].append({"title": musica, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
-            print(server_info[servidor]['fila_tudo'])
+            server_info[servidor]['fila_tudo'].append({
+                "title": musica,
+                "added_by": user,
+                "real_title": None,
+                "downloaded": False,
+                'playnext': False,
+                'voice_channel_id': canal
+            })
     else:
         titulo = utils.obter_titulo(search)
-        if server_info[servidor]['fila_tudo'] is None:
-            server_info[servidor]['fila_tudo'] = []  # Re-inicializa como uma lista vazia, caso seja None
-        server_info[servidor]['fila_tudo'].append({"title": titulo, "added_by": user, "real_title": None, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
+        if server_info[servidor].get('fila_tudo') is None:
+            server_info[servidor]['fila_tudo'] = []  # Re-inicializa como lista vazia, se necessário
+        server_info[servidor]['fila_tudo'].append({
+            "title": titulo,
+            "added_by": user,
+            "real_title": None,
+            "downloaded": False,
+            'playnext': False,
+            'voice_channel_id': canal
+        })
         await mensagem.edit(content=f"{titulo} adicionado à fila")
+
 
 async def reproduce(ctx, *, search: str, servidor): #TODO
     #await ctx.send(f'Pesquisando por: {search}...')
