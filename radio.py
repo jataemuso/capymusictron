@@ -32,8 +32,5 @@ def gerar_radio(nome_musica):
     return radio_playlist
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Uso: python script.py \"nome da música\"")
-    else:
-        nome_musica = " ".join(sys.argv[1:])
-        gerar_radio(nome_musica)
+    nome_musica = input("Nome da musica:")
+    gerar_radio(nome_musica)

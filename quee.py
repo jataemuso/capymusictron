@@ -12,6 +12,9 @@ import fair_queue
 import server_config_manager
 import utils
 # Função para monitorar o fim da música
+import time
+
+bot_ready = False
 
 
 # Configurações iniciais do bot
@@ -256,25 +259,65 @@ intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 
-@bot.command(name='tempo')
-async def mostrar_tempo(ctx):
+@bot.command(name='nowplaying')
+async def nowplaying(ctx):
     servidor, *_ = servidor_e_canal_usuario(ctx)
-    resultado = obter_tempo_musica(servidor)
     
-    if resultado is None:
-        await ctx.send("Nenhuma música está sendo reproduzida no momento.")
-        return
-    
-    tempo_atual, tempo_total = resultado
-    minutos_atual, segundos_atual = divmod(int(tempo_atual), 60)
-    minutos_total, segundos_total = divmod(int(tempo_total), 60)
-    
-    await ctx.send(f"Tempo atual: {minutos_atual}:{segundos_atual:02d} / {minutos_total}:{segundos_total:02d}")
-@bot.command(name='pause')
-async def comando_pause(ctx):
-    servidor, *_ = servidor_e_canal_usuario(ctx)
-    mensagem = await pause(ctx)
-    await ctx.send(mensagem)
+    # Obtenha dados iniciais
+    tempo_atual, duracao_total = obter_tempo_musica(servidor)
+    tempo_atual = time.strftime("%M:%S", time.gmtime(tempo_atual))
+    duracao_total = time.strftime("%M:%S", time.gmtime(duracao_total))
+    barra = utils.calcular_barra_progresso(tempo_atual, duracao_total, comprimento_barra=11)
+    musica_tocando = server_info[servidor]['tocando_agora']
+    user = await bot.fetch_user(musica_tocando['added_by_id'])
+    avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
+
+    embed = discord.Embed(
+        title=musica_tocando['title'],
+        description=f"▶ {barra} `[{tempo_atual}/{duracao_total}]` 🔈",
+        url=musica_tocando['url'],
+        color=discord.Color.red()
+    )
+    embed.set_author(
+        name=f"{user.name}",
+        icon_url=avatar_url
+    )
+    embed.set_thumbnail(url=utils.get_thumbnail_url(musica_tocando['url']))
+    embed.set_footer(text=musica_tocando["artist"])
+
+    # Envie a mensagem inicial
+    message = await ctx.send(embed=embed)
+
+    # Inicie o loop de atualização
+    while True:
+        # Verifique se a mensagem ainda está entre as 3 últimas
+        last_messages = [msg async for msg in ctx.channel.history(limit=3)]
+        if message not in last_messages:
+            break
+
+        # Atualize os dados da música
+        tempo_atual, duracao_total = obter_tempo_musica(servidor)
+        tempo_atual = time.strftime("%M:%S", time.gmtime(tempo_atual))
+        duracao_total = time.strftime("%M:%S", time.gmtime(duracao_total))
+        barra = utils.calcular_barra_progresso(tempo_atual, duracao_total, comprimento_barra=11)
+
+        # Atualize o título e outros dados
+        nova_musica = server_info[servidor]['tocando_agora']
+        if nova_musica['title'] != embed.title:
+            embed.title = nova_musica['title']
+            embed.url = nova_musica['url']
+            embed.set_thumbnail(url=utils.get_thumbnail_url(nova_musica['url']))
+            embed.set_footer(text=nova_musica["artist"])
+        
+        # Atualize a descrição com o progresso atual
+        embed.description = f"▶ {barra} `[{tempo_atual}/{duracao_total}]` 🔈"
+
+        # Edite a mensagem
+        await message.edit(embed=embed)
+
+        # Aguarde 5 segundos antes da próxima atualização
+        await asyncio.sleep(5)
+
 
 @bot.command(name='resume')
 async def comando_resume(ctx):
@@ -334,6 +377,7 @@ async def checkpermissao(ctx):
 @bot.command(name='play')
 async def play(ctx, *, search: str = None):
     user = ctx.author.name
+    userId = ctx.author.id
     servidor, canal = servidor_e_canal_usuario(ctx)
 
     if server_info[servidor].get('paused', False):
@@ -352,9 +396,12 @@ async def play(ctx, *, search: str = None):
     mensagem = await ctx.send(f"Pesquisando por: {search}...")
     if 'playlist' in search:
         playlist = get_playlist_titles(search)
-        for musica in playlist:
+        for track in playlist:
             server_info[servidor]['fila_tudo'].append({
-                "title": musica,
+                "title": track["title"],
+                "artist": track["artist"],
+                "url": track["url"],
+                "added_by_id": userId,
                 "added_by": user,
                 "real_title": None,
                 "downloaded": False,
@@ -362,18 +409,21 @@ async def play(ctx, *, search: str = None):
                 'voice_channel_id': canal
             })
     else:
-        titulo = utils.obter_titulo(search)
+        track = utils.obter_titulo(search)
         if server_info[servidor].get('fila_tudo') is None:
             server_info[servidor]['fila_tudo'] = []  # Re-inicializa como lista vazia, se necessário
         server_info[servidor]['fila_tudo'].append({
-            "title": titulo,
+            "title": track["title"],
+            "artist": track["artist"],
+            "url": track["url"],
             "added_by": user,
+            "added_by_id": userId,
             "real_title": None,
             "downloaded": False,
             'playnext': False,
             'voice_channel_id': canal
         })
-        await mensagem.edit(content=f"{titulo} adicionado à fila")
+        await mensagem.edit(content=f"{track["title"]} - {track["artist"]} adicionado à fila")
 
 
 async def reproduce(ctx, *, search: str, servidor): #TODO
@@ -570,11 +620,22 @@ async def play_next(ctx, *, search: str):
 
     mensagem = await ctx.send(f'Pesquisando por: {search} para adicionar como próxima...')
     user = ctx.author.name
-    titulo = utils.obter_titulo(search)
+    userId = ctx.author.id
+    track = utils.obter_titulo(search)
 
     # Adiciona a música à fila
-    server_info[servidor]['fila_tudo'].insert(0, {"title": titulo, "added_by": user, "real_title": None, "downloaded": False, 'playnext': True, 'voice_channel_id': voice_channel})
-    await mensagem.edit(content=f'A música "{titulo}" foi adicionada como próxima na fila!')
+    server_info[servidor]['fila_tudo'].insert(0, {
+        "title": track["title"],
+        "artist": track["artist"],
+        "url": track["url"],
+        "added_by_id": userId,
+        "added_by": user,
+        "real_title": None,
+        "downloaded": False,
+        'playnext': True,
+        'voice_channel_id': voice_channel
+    })
+    await mensagem.edit(content=f'A música "{track["title"]} - {track["artist"]}" foi adicionada como próxima na fila!')
 
 
 @bot.command(name='move')
@@ -604,11 +665,22 @@ async def criar_radio(ctx, *, search: str, user=None):
     await ctx.send(f'Pesquisando radio: {search}...')
     radio_playlist = gerar_radio(search)
     user = ctx.author.name
+    userId = ctx.author.id
     
 
     for music in radio_playlist["tracks"]:
-        title = f"{music['title']} - {music['artists'][0]['name']}"
-        server_info[servidor]['fila_tudo'].append({"title": title, "added_by": user, "downloaded": False, 'playnext': False, 'voice_channel_id': canal})
+        title = music['title']
+        artist = music['artists'][0]['name']
+        url = f"https://www.youtube.com/watch?v={music["videoId"]}"
+        server_info[servidor]['fila_tudo'].append({
+            "title": title,
+            "artist": artist,
+            'url': url,
+            "added_by_id": userId,
+            "added_by": user,
+            "downloaded": False,
+            'playnext': False,
+            'voice_channel_id': canal})
 
 
 @bot.event

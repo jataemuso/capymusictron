@@ -4,7 +4,7 @@ import sys
 def get_playlist_titles(playlist_url):
     """
     Recebe o URL de uma playlist do YouTube ou YouTube Music
-    e retorna uma lista com os nomes das músicas.
+    e retorna uma lista de dicionários com os nomes das músicas, artistas e URLs.
     """
     # Configurações do yt_dlp para extrair apenas informações necessárias
     ydl_opts = {
@@ -12,7 +12,7 @@ def get_playlist_titles(playlist_url):
         'extract_flat': True,  # Evita o download, apenas lista as informações
     }
 
-    titles = []
+    tracks = []
 
     # Extrai informações da playlist
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -20,26 +20,23 @@ def get_playlist_titles(playlist_url):
             result = ydl.extract_info(playlist_url, download=False)
             if 'entries' in result:
                 for video in result['entries']:
-                    titles.append(video.get('title', 'Titulo Desconhecido'))
+                    title = video.get('title', 'Título Desconhecido')
+                    artist = video.get('artist', None)  # Tenta pegar o 'artist', se existir
+                    if not artist:  # Se 'artist' não for encontrado, usa o nome do uploader
+                        artist = video.get('uploader', 'Artista Desconhecido')
+                    url = video.get('url', 'URL Desconhecida')  # Obtém o URL do vídeo
+                    tracks.append({'title': title, 'artist': artist, 'url': url})
             else:
                 print("Nenhuma entrada encontrada na playlist.")
         except Exception as e:
             print(f"Erro ao extrair informações da playlist: {e}")
             return []
 
-    return titles
+    return tracks
 
+# Exemplo de uso
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Uso: python script.py <link_da_playlist>")
-        sys.exit(1)
-
-    playlist_url = sys.argv[1]
-    music_titles = get_playlist_titles(playlist_url)
-
-    if music_titles:
-        print("\nNomes das músicas na playlist:")
-        for i, title in enumerate(music_titles, 1):
-            print(f"{i}. {title}")
-    else:
-        print("Nenhuma música encontrada ou erro ao processar a playlist.")
+    url = input("Digite o URL da playlist: ")
+    tracks = get_playlist_titles(url)
+    for track in tracks:
+        print(f"Título: {track['title']}, Artista: {track['artist']}, URL: {track['url']}")
