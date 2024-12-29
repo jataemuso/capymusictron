@@ -63,6 +63,8 @@ async def permissao(ctx):
     user = ctx.author
     server = server_info[guild_id]
 
+    if not bot_ready:
+        return -1
     if user.id == REMOVIDO:
         return 4  # Permissão Owner do bot
     if user.id == ctx.guild.owner_id:
@@ -259,9 +261,13 @@ intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 
-@bot.command(name='nowplaying')
+@bot.command(name='nowplaying') #TODO atualizar dados de quem colocou a musica no while true
 async def nowplaying(ctx):
     servidor, *_ = servidor_e_canal_usuario(ctx)
+
+    if not server_info[servidor]["tocando_agora"]:
+        ctx.send("Nenhuma nenhuma música sendo tocada no momento!")
+        return
     
     # Obtenha dados iniciais
     tempo_atual, duracao_total = obter_tempo_musica(servidor)
@@ -295,22 +301,35 @@ async def nowplaying(ctx):
         if message not in last_messages:
             break
 
-        # Atualize os dados da música
-        tempo_atual, duracao_total = obter_tempo_musica(servidor)
-        tempo_atual = time.strftime("%M:%S", time.gmtime(tempo_atual))
-        duracao_total = time.strftime("%M:%S", time.gmtime(duracao_total))
-        barra = utils.calcular_barra_progresso(tempo_atual, duracao_total, comprimento_barra=11)
-
-        # Atualize o título e outros dados
-        nova_musica = server_info[servidor]['tocando_agora']
-        if nova_musica['title'] != embed.title:
-            embed.title = nova_musica['title']
-            embed.url = nova_musica['url']
-            embed.set_thumbnail(url=utils.get_thumbnail_url(nova_musica['url']))
-            embed.set_footer(text=nova_musica["artist"])
+        if not server_info[servidor]["tocando_agora"]:
+            barra = "🔘▬▬▬▬▬▬▬▬▬▬"
+            tempo_atual = "00:00"
+            duracao_total = "00:00"
+            embed.title = "Nada está tocando"
+            embed.url = "https://github.com/jataemuso"
+            embed.set_footer(text=".")
+            embed.set_thumbnail(url="https://via.placeholder.com/1x1.png")
+            embed.description = f"⏸ {barra} `[{tempo_atual}/{duracao_total}]` 🔈"
         
-        # Atualize a descrição com o progresso atual
-        embed.description = f"▶ {barra} `[{tempo_atual}/{duracao_total}]` 🔈"
+        else:
+
+            # Atualize os dados da música
+            tempo_atual, duracao_total = obter_tempo_musica(servidor)
+            tempo_atual = time.strftime("%M:%S", time.gmtime(tempo_atual))
+            duracao_total = time.strftime("%M:%S", time.gmtime(duracao_total))
+            barra = utils.calcular_barra_progresso(tempo_atual, duracao_total, comprimento_barra=11)
+
+
+            # Atualize o título e outros dados
+            nova_musica = server_info[servidor]['tocando_agora']
+            if nova_musica['title'] != embed.title:
+                embed.title = nova_musica['title']
+                embed.url = nova_musica['url']
+                embed.set_thumbnail(url=utils.get_thumbnail_url(nova_musica['url']))
+                embed.set_footer(text=nova_musica["artist"])
+            
+            # Atualize a descrição com o progresso atual
+            embed.description = f"▶ {barra} `[{tempo_atual}/{duracao_total}]` 🔈"
 
         # Edite a mensagem
         await message.edit(embed=embed)
@@ -426,32 +445,41 @@ async def play(ctx, *, search: str = None):
         await mensagem.edit(content=f"{track["title"]} - {track["artist"]} adicionado à fila")
 
 
-async def reproduce(ctx, *, search: str, servidor): #TODO
-    #await ctx.send(f'Pesquisando por: {search}...')
+async def reproduce(ctx, *, search: str, servidor):
     ydl_opts = {
-        'format': 'bestaudio[ext=webp]/bestaudio',  # Apenas áudio
-        'outtmpl': 'downloads/%(title)s.%(ext)s',  # Caminho de saída
+        'format': 'bestaudio[ext=webp]/bestaudio',
+        'outtmpl': 'downloads/%(title)s.%(ext)s',
         'quiet': True,
-        'default_search': 'ytsearch',  # Busca no YouTube automaticamente
-        'noplaylist': False,  # Permite o download da playlist
-        'progress_hooks': [lambda d: asyncio.run_coroutine_threadsafe(on_download_complete(d, ctx, servidor), bot.loop)]  # Chama função ao finalizar download
+        'default_search': 'ytsearch',
+        'noplaylist': False,
+        'progress_hooks': [lambda d: asyncio.run_coroutine_threadsafe(
+            on_download_complete(d, ctx, servidor), bot.loop
+        )]
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            # Extrai informações da música
-            info = ydl.extract_info(search, download=True)
-            if 'entries' in info:  # Playlist detectada
-                for entry in info['entries']:
-                    title = entry.get('title', 'Unknown Title')
-                    #await ctx.send(f'Baixado: **{title}**')
-            else:  # Apenas um item detectado
-                title = info.get('title', 'Unknown Title')
-                #await ctx.send(f'Baixado: **{title}**')
+    # Função para rodar o yt_dlp em um thread separado
+    def download_with_ydl():
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(search, download=True)
 
-        except Exception as e:
-            print(f"Erro ao baixar música: {e}")
-            await ctx.send(f"Ocorreu um erro ao baixar a música: {e}")
+    try:
+        # Aguarde o resultado da função `to_thread`
+        info = await asyncio.to_thread(download_with_ydl)
+
+        # Após obter `info`, processamos os dados
+        if 'entries' in info:  # Caso seja uma playlist
+            for entry in info['entries']:
+                title = entry.get('title', 'Unknown Title')
+                print(f"Baixado: {title}")
+        else:  # Caso seja uma única música
+            title = info.get('title', 'Unknown Title')
+            print(f"Baixado: {title}")
+
+    except Exception as e:
+        print(f"Erro ao baixar música: {e}")
+        await ctx.send(f"Ocorreu um erro ao baixar a música: {e}")
+
+
 
 # Função de callback para quando o download for concluído
 async def on_download_complete(d, ctx, servidor): #TODO
@@ -662,12 +690,12 @@ async def criar_radio(ctx, *, search: str, user=None):
     if canal is None:
         await ctx.send('Você não pode criar rádios sem estar em um canal de voz.')
         return
-    await ctx.send(f'Pesquisando radio: {search}...')
+    mensagem = await ctx.send(f'Pesquisando radio: {search}...')
     radio_playlist = gerar_radio(search)
     user = ctx.author.name
     userId = ctx.author.id
     
-
+    await mensagem.edit(content=f"Rádio encontrado para a música: {radio_playlist["tracks"][0]['title']} - {radio_playlist["tracks"][0]['artists'][0]['name']}") #DEBUG
     for music in radio_playlist["tracks"]:
         title = music['title']
         artist = music['artists'][0]['name']
@@ -698,6 +726,10 @@ async def on_guild_remove(guild):
 async def on_ready():
     print(f'{bot.user} está online e pronto para uso!')
     print(f"Estou em {len(bot.guilds)} servidores.")
+    await bot.change_presence(
+        status=discord.Status.online,
+        activity=discord.Game(name="Digite !help para ajuda")
+    )
     
     for guild in bot.guilds:
         try:
@@ -727,8 +759,9 @@ async def on_ready():
             print(f"Administradores encontrados: {[admin.name for admin in admins]}")
         except Exception as e:
             print(f"Erro ao buscar o dono do servidor {guild.name}: {e}")
-    
+    global bot_ready
     print("Todos os servidores foram carregados!")
+    bot_ready = True
 
     # Inicialize outras tarefas que não bloqueiam a execução do restante do bot
     bot.loop.create_task(gatekeeper())
