@@ -18,6 +18,22 @@ from datetime import datetime
 import subprocess
 import pandas as pd
 
+bot_ready = False
+
+from functools import wraps
+
+def require_ready():
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(ctx, *args, **kwargs):
+            if not bot_ready:
+                await ctx.send("O bot ainda está inicializando. Tente novamente em alguns segundos.")
+                return
+            return await func(ctx, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
 # Configuração do logger
 if not os.path.exists("logs"):
     os.makedirs("logs")
@@ -293,9 +309,10 @@ async def tocar(ctx, *, filepath: str, voice_channel=None, server_id=None):
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-bot = commands.Bot(command_prefix=PREFIX, intents=intents)
+bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
 
-@bot.command(name='nowplaying') #TODO atualizar dados de quem colocou a musica no while true
+@bot.command(name='nowplaying', aliases=['tocandoagora', 'playingnow', 'agoratocando'])
+@require_ready()
 async def nowplaying(ctx):
     servidor, *_ = servidor_e_canal_usuario(ctx)
     
@@ -359,6 +376,7 @@ async def nowplaying(ctx):
 
 
 @bot.command(name='resume')
+@require_ready()
 async def comando_resume(ctx):
     servidor, *_ = servidor_e_canal_usuario(ctx)
     mensagem = await resume(ctx)
@@ -413,7 +431,8 @@ async def checkpermissao(ctx):
     else:
         await ctx.send("Você não tem permissões especiais.")
 
-@bot.command(name='play')
+@bot.command(name='play' , aliases=['tocar'])
+@require_ready()
 async def play(ctx, *, search: str = None):
     user = ctx.author.name
     userId = ctx.author.id
@@ -517,7 +536,8 @@ async def on_download_complete(d, ctx, servidor): #TODO
 
 
 
-@bot.command(name='queue')
+@bot.command(name='queue' , aliases=['fila'])
+@require_ready()
 async def show_queue(ctx): 
     servidor, *_ = servidor_e_canal_usuario(ctx)
     tocando_agora = server_info[servidor]['tocando_agora']
@@ -551,7 +571,8 @@ async def show_queue(ctx):
     for msg in messages:
         await ctx.send(msg)
 
-@bot.command(name='skip')
+@bot.command(name='skip' , aliases=['pular'])
+@require_ready()
 async def skip(ctx, forceskip=False, commandStop=False):
     servidor_e_canal_usuario(ctx=ctx)
     guild_id = ctx.guild.id
@@ -596,6 +617,7 @@ async def skip(ctx, forceskip=False, commandStop=False):
         server_info[guild_id]['skip'] = set()
 
 @bot.command(name='forceskip') #TODO
+@require_ready()
 async def forceskip(ctx):
     servidor, voice_channel = servidor_e_canal_usuario(ctx)
     if await permissao(ctx) < 1:
@@ -608,7 +630,8 @@ async def forceskip(ctx):
     
     await skip(ctx, forceskip=True)
 
-@bot.command(name='clear') #TODO verificar permissões e atualizar filatudo
+@bot.command(name='clear', aliases=['limpar']) #TODO verificar permissões e atualizar filatudo
+@require_ready()
 async def clear(ctx, commandStop=False):
         if await permissao(ctx) < 1:
             await ctx.send('Você não tem permissão de usar esse comando!')
@@ -618,7 +641,8 @@ async def clear(ctx, commandStop=False):
         if not commandStop:
             await ctx.send("Fila limpa!")
 
-@bot.command(name='stop') 
+@bot.command(name='stop' , aliases=['parar']) 
+@require_ready()
 async def stop(ctx):
     if await permissao(ctx) < 1:
         await ctx.send('Você não tem permissão de usar esse comando!')
@@ -628,13 +652,15 @@ async def stop(ctx):
 
 
 
-@bot.command(name='shuffle')
+@bot.command(name='shuffle' , aliases=['embaralhar'])
+@require_ready()
 async def shuffle_queue(ctx):
     servidor, *_ = servidor_e_canal_usuario(ctx)
     random.shuffle(server_info[servidor]['fila_tudo'])
     await ctx.send('A fila foi embaralhada.')
 
-@bot.command(name='remove')
+@bot.command(name='remove', aliases=['remover'])
+@require_ready()
 async def remove_from_queue(ctx, index: int):
     servidor, *_ = servidor_e_canal_usuario(ctx)
     fila_tudo = server_info[servidor]['fila_tudo']
@@ -652,7 +678,8 @@ async def remove_from_queue(ctx, index: int):
 
     await ctx.send(f'Removido da fila: **{removed_song["title"]}**')
 
-@bot.command(name='playnext') 
+@bot.command(name='playnext', aliases=['tocaraseguir'])
+@require_ready()
 async def play_next(ctx, *, search: str):
     # ID do cargo que você quer verificar
     servidor, voice_channel = servidor_e_canal_usuario(ctx)
@@ -686,7 +713,8 @@ async def play_next(ctx, *, search: str):
     await mensagem.edit(content=f'A música "{track["title"]} - {track["artist"]}" foi adicionada como próxima na fila!')
 
 
-@bot.command(name='move')
+@bot.command(name='move' , aliases=['mover'])
+@require_ready()
 async def move_song(ctx, from_index: int, to_index: int):
     servidor, *_ = servidor_e_canal_usuario(ctx)
     fila_tudo = server_info[servidor]['fila_tudo']
@@ -704,7 +732,8 @@ async def move_song(ctx, from_index: int, to_index: int):
 
     await ctx.send(f'Movido: **{song["title"]}** para a posição {to_index}')
 
-@bot.command(name='radio')
+@bot.command(name='radio' , aliases=['autoplaylist'])
+@require_ready()
 async def criar_radio(ctx, *, search: str, user=None):
     servidor, canal = servidor_e_canal_usuario(ctx)
     if canal is None:
@@ -729,6 +758,52 @@ async def criar_radio(ctx, *, search: str, user=None):
             "downloaded": False,
             'playnext': False,
             'voice_channel_id': canal})
+        
+@bot.command(name="help")
+async def help_command(ctx):
+    perm = await permissao(ctx)
+
+    embed = discord.Embed(
+        title="Comandos:",
+        color=discord.Color.blue()
+    )
+
+    comandos_usuarios = [
+        (f"`{PREFIX}play <música>`", "Adiciona uma música à fila."),
+        (f"`{PREFIX}queue`", "Exibe a fila de músicas."),
+        (f"`{PREFIX}nowplaying`", "Mostra a música que está tocando atualmente."),
+        (f"`{PREFIX}shuffle`", "Embaralha a fila de músicas."),
+        (f"`{PREFIX}remove <número>`", "Remove uma música específica da fila (se foi adicionada por você)."),
+        (f"`{PREFIX}help`", "Exibe esta mensagem de ajuda."),
+        (f"`{PREFIX}skip`", "Pula a música atual."),
+    ]
+
+    comandos_dj = [
+        (f"`{PREFIX}playnext <música>`", "Adiciona uma música para ser tocada a seguir."),
+        (f"`{PREFIX}stop`", "Para a música atual e limpa a fila."),
+        (f"`{PREFIX}clear`", "Limpa a fila de músicas."),
+        (f"`{PREFIX}forceskip`", "Força a música atual a ser pulada."),
+    ]
+
+    comandos_dono = [
+        (f"`{PREFIX}setdj <cargo>`", "Define um cargo como DJ."),
+        (f"`{PREFIX}removedj`", "Remove o cargo DJ."),
+    ]
+
+    comandos_dono_bot = [
+    ]
+
+    if perm >= 0:
+        embed.add_field(name="Music:", value="\n".join([f"{name} - {desc}" for name, desc in comandos_usuarios]), inline=False)
+    if perm >= 1:
+        embed.add_field(name="DJs:", value="\n".join([f"{name} - {desc}" for name, desc in comandos_dj]), inline=False)
+    if perm >= 3:
+        embed.add_field(name="Admins:", value="\n".join([f"{name} - {desc}" for name, desc in comandos_dono]), inline=False)
+    if perm >= 4:
+        embed.add_field(name="Bot owner:", value="\n".join([f"{name} - {desc}" for name, desc in comandos_dono_bot]), inline=False)
+
+    await ctx.send(embed=embed)
+
 
 
 @bot.event
@@ -742,6 +817,7 @@ async def on_guild_remove(guild):
     #IDEIA: mandar mesagem para o dono do servidor, talvez pedindo um feedbeck
 
 @bot.event
+@require_ready()
 async def on_command(ctx):
     start_time = time.time()
 
@@ -795,7 +871,7 @@ async def on_ready():
     print(f"Estou em {len(bot.guilds)} servidores.")
     await bot.change_presence(
         status=discord.Status.online,
-        activity=discord.Game(name="Digite !help para ajuda")
+        activity=discord.Game(name=f"Digite {PREFIX}help para ajuda")
     )
     
     for guild in bot.guilds:

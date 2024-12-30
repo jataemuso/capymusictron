@@ -43,8 +43,8 @@ if not df.empty:
         st.plotly_chart(fig2, use_container_width=True)
 
         tempo_de_reproducao = df.groupby('server')['tempo_de_reproducao_acumulado'].last().reset_index()
-        print(tempo_de_reproducao)
         tempo_de_reproducao.columns = ['Servidor', 'Tempo de Reprodução']
+        #tempo_de_reproducao[]
         fig5 = px.pie(
             tempo_de_reproducao, 
             values='Tempo de Reprodução', 
