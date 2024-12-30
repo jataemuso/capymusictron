@@ -17,6 +17,7 @@ import csv
 from datetime import datetime
 import subprocess
 import pandas as pd
+from dotenv import load_dotenv
 
 bot_ready = False
 
@@ -56,11 +57,9 @@ def log_to_csv(filename, data):
         writer.writerow(data)
 
 
-
-
-# Configurações iniciais do bot
-TOKEN = "***REMOVED***"  # Use uma variável de ambiente para o token
-PREFIX = '?'
+TOKEN = os.getenv("DISCORD_TOKEN")
+PREFIX = os.getenv("BOT_PREFIX")
+BOT_OWNER_ID = int(os.getenv("BOT_OWNER_ID"))
 FILA_TUDO = []
 DOWNLOADS_FOLDER = 'downloads'
 server_info = {}
@@ -113,7 +112,7 @@ async def permissao(ctx):
 
     if not bot_ready:
         return -1
-    if user.id == REMOVIDO:
+    if user.id == BOT_OWNER_ID:
         return 4  # Permissão Owner do bot
     if user.id == ctx.guild.owner_id:
         return 3  # Permissão Owner do servidor
