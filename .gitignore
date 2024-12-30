@@ -7,3 +7,6 @@
 /downloads
 /music_queue.json
 server_config.json
+/logs
+*.csv
+*.log

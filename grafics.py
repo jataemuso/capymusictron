@@ -42,6 +42,17 @@ if not df.empty:
         fig2 = px.pie(server_activity, values='Comandos', names='Servidor', title="Comandos por Servidor")
         st.plotly_chart(fig2, use_container_width=True)
 
+        tempo_de_reproducao = df.groupby('server')['tempo_de_reproducao_acumulado'].last().reset_index()
+        print(tempo_de_reproducao)
+        tempo_de_reproducao.columns = ['Servidor', 'Tempo de Reprodução']
+        fig5 = px.pie(
+            tempo_de_reproducao, 
+            values='Tempo de Reprodução', 
+            names='Servidor', 
+            title='Tempo de Reprodução por Servidor'
+            )
+        st.plotly_chart(fig5, use_container_width=True)
+
     # Atividade por Canal
     if 'channel' in df.columns:
         st.markdown("## Atividade por Canal")

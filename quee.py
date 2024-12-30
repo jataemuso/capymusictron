@@ -16,6 +16,7 @@ import logging
 import csv
 from datetime import datetime
 import subprocess
+import pandas as pd
 
 # Configuração do logger
 if not os.path.exists("logs"):
@@ -27,6 +28,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+
 # Função para registrar dados detalhados
 def log_to_csv(filename, data):
     file_exists = os.path.isfile(filename)
@@ -34,7 +36,7 @@ def log_to_csv(filename, data):
         writer = csv.writer(f)
         if not file_exists:
             writer.writerow(['timestamp', 'command', 'user', 'user_id', 'server', 'server_id',
-                             'channel', 'channel_id', 'args', 'latency', 'error'])
+                             'channel', 'channel_id', 'args', 'latency', 'tempo_de_reproducao_acumulado', 'error'])
         writer.writerow(data)
 
 
@@ -50,6 +52,12 @@ server_config = server_config_manager.load_servers()
 
 def add_server(server_id, owner=None, admins=None):
     """Adiciona um servidor ao dicionário server_info, se não estiver presente."""
+    tempo_de_reproducao = 0
+    csv_path = f'logs\{datetime.now().strftime('%Y-%m-%d')}_commands.csv'
+    if os.path.exists(csv_path):
+        data = pd.read_csv(csv_path)
+        tempo_de_reproducao = int(data['tempo_de_reproducao_acumulado'].iloc[-1])
+
     if server_id not in server_info:
         server_info[server_id] = {
             'owner': owner,
@@ -61,7 +69,8 @@ def add_server(server_id, owner=None, admins=None):
             'canal': None,
             'ctx': None,
             'dj_id': None,
-            'paused': None
+            'paused': None,
+            'tempo_de_reproducao_acumulado': tempo_de_reproducao
         }
     server_config_manager.add_server(server_config, str(server_id))
     server_config_manager.save_servers(server_config)
@@ -268,7 +277,9 @@ async def tocar(ctx, *, filepath: str, voice_channel=None, server_id=None):
 
         # Desconecta apenas se a música terminou e não está pausada
         if not server_info[server_id].get('paused', False):
-            await voice_client.disconnect()
+            server_info[server_id]['tempo_de_reproducao_acumulado'] += server_info[server_id]['tocando_agora']['tempo_atual']
+            if len(server_info[server_id]['fila_tudo']) == 0:
+                await voice_client.disconnect()
     except Exception as e:
         await ctx.send(f"Ocorreu um erro ao tocar o arquivo: {e}")
         if voice_client:
@@ -745,11 +756,12 @@ async def on_command(ctx):
     args = ctx.message.content
     latency = round(bot.latency * 1000, 2)  # Latência do bot em ms
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    tempo_de_reproducao_acumulado = server_info[server_id]['tempo_de_reproducao_acumulado']
 
     # Registrar no CSV
     filename = f"logs/{datetime.now().strftime('%Y-%m-%d')}_commands.csv"
     log_to_csv(filename, [timestamp, command_name, user, user_id, server, server_id,
-                          channel, channel_id, args, latency, None])
+                          channel, channel_id, args, latency, tempo_de_reproducao_acumulado, None])
 
     # Log adicional no console
     logging.info(f"Comando: {command_name} | Usuário: {user} | Latência: {latency}ms")
@@ -767,11 +779,12 @@ async def on_command_error(ctx, error):
     server_id = ctx.guild.id if ctx.guild else "DM"
     channel = ctx.channel.name if ctx.guild else "DM"
     channel_id = ctx.channel.id if ctx.guild else "DM"
+    tempo_de_reproducao_acumulado = server_info[server_id]['tempo_de_reproducao_acumulado']
 
     # Registrar no CSV
     filename = f"logs/{datetime.now().strftime('%Y-%m-%d')}_commands.csv"
     log_to_csv(filename, [timestamp, command_name, ctx.author.name, ctx.author.id,
-                          server, server_id, channel, channel_id, ctx.message.content, None, str(error)])
+                          server, server_id, channel, channel_id, ctx.message.content, None, tempo_de_reproducao_acumulado, str(error)])
 
     # Log adicional no console
     logging.error(f"Erro no comando: {command_name} - {error}")
