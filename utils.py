@@ -46,21 +46,9 @@ def calcular_barra_progresso(tempo_atual, duracao_total, comprimento_barra=20):
     :param comprimento_barra: Comprimento total da barra de progresso (padrão 20).
     :return: String representando a barra de progresso.
     """
-    # Converter tempos para segundos, se necessário
-    def tempo_em_segundos(tempo):
-        if isinstance(tempo, int):
-            return tempo
-        elif isinstance(tempo, str):
-            minutos, segundos = map(int, tempo.split(':'))
-            return minutos * 60 + segundos
-        else:
-            raise ValueError("Tempo deve ser uma string 'minuto:segundo' ou um inteiro representando segundos.")
-
-    segundos_atual = tempo_em_segundos(tempo_atual)
-    segundos_total = tempo_em_segundos(duracao_total)
 
     # Calcular a porcentagem de progresso
-    porcentagem_progresso = segundos_atual / segundos_total if segundos_total > 0 else 0
+    porcentagem_progresso = tempo_atual / duracao_total if duracao_total > 0 else 0
 
     # Determinar a posição da "bolinha" na barra
     posicao_bolinha = int(porcentagem_progresso * comprimento_barra)

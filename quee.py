@@ -11,10 +11,33 @@ from playlist_extrator import get_playlist_titles
 import fair_queue
 import server_config_manager
 import utils
-# Função para monitorar o fim da música
 import time
+import logging
+import csv
+from datetime import datetime
+import subprocess
 
-bot_ready = False
+# Configuração do logger
+if not os.path.exists("logs"):
+    os.makedirs("logs")
+
+logging.basicConfig(
+    filename='bot_debug.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# Função para registrar dados detalhados
+def log_to_csv(filename, data):
+    file_exists = os.path.isfile(filename)
+    with open(filename, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(['timestamp', 'command', 'user', 'user_id', 'server', 'server_id',
+                             'channel', 'channel_id', 'args', 'latency', 'error'])
+        writer.writerow(data)
+
+
 
 
 # Configurações iniciais do bot
@@ -264,75 +287,61 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 @bot.command(name='nowplaying') #TODO atualizar dados de quem colocou a musica no while true
 async def nowplaying(ctx):
     servidor, *_ = servidor_e_canal_usuario(ctx)
-
-    if not server_info[servidor]["tocando_agora"]:
-        ctx.send("Nenhuma nenhuma música sendo tocada no momento!")
-        return
     
-    # Obtenha dados iniciais
-    tempo_atual, duracao_total = obter_tempo_musica(servidor)
-    tempo_atual = time.strftime("%M:%S", time.gmtime(tempo_atual))
-    duracao_total = time.strftime("%M:%S", time.gmtime(duracao_total))
-    barra = utils.calcular_barra_progresso(tempo_atual, duracao_total, comprimento_barra=11)
-    musica_tocando = server_info[servidor]['tocando_agora']
-    user = await bot.fetch_user(musica_tocando['added_by_id'])
-    avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
-
-    embed = discord.Embed(
-        title=musica_tocando['title'],
-        description=f"▶ {barra} `[{tempo_atual}/{duracao_total}]` 🔈",
-        url=musica_tocando['url'],
-        color=discord.Color.red()
-    )
-    embed.set_author(
-        name=f"{user.name}",
-        icon_url=avatar_url
-    )
-    embed.set_thumbnail(url=utils.get_thumbnail_url(musica_tocando['url']))
-    embed.set_footer(text=musica_tocando["artist"])
-
-    # Envie a mensagem inicial
-    message = await ctx.send(embed=embed)
+    message = None
 
     # Inicie o loop de atualização
     while True:
-        # Verifique se a mensagem ainda está entre as 3 últimas
-        last_messages = [msg async for msg in ctx.channel.history(limit=3)]
-        if message not in last_messages:
-            break
-
+        
         if not server_info[servidor]["tocando_agora"]:
             barra = "🔘▬▬▬▬▬▬▬▬▬▬"
             tempo_atual = "00:00"
             duracao_total = "00:00"
-            embed.title = "Nada está tocando"
-            embed.url = "https://github.com/jataemuso"
-            embed.set_footer(text=".")
-            embed.set_thumbnail(url="https://via.placeholder.com/1x1.png")
-            embed.description = f"⏸ {barra} `[{tempo_atual}/{duracao_total}]` 🔈"
+            embed = discord.Embed(
+                description = f"⏸ {barra} `[{tempo_atual}/{duracao_total}]` 🔈",
+                title = "Nada está tocando",
+                url = "https://github.com/jataemuso",
+                color=discord.Color.red()
+            )
         
         else:
 
-            # Atualize os dados da música
             tempo_atual, duracao_total = obter_tempo_musica(servidor)
-            tempo_atual = time.strftime("%M:%S", time.gmtime(tempo_atual))
-            duracao_total = time.strftime("%M:%S", time.gmtime(duracao_total))
             barra = utils.calcular_barra_progresso(tempo_atual, duracao_total, comprimento_barra=11)
+            format_string = "%M:%S" if duracao_total < 3600 else "%H:%M:%S"
+            tempo_atual = time.strftime(format_string, time.gmtime(tempo_atual))
+            duracao_total = time.strftime(format_string, time.gmtime(duracao_total))
+            musica_tocando = server_info[servidor]['tocando_agora']
+            user = await bot.fetch_user(musica_tocando['added_by_id'])
+            avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
 
-
-            # Atualize o título e outros dados
-            nova_musica = server_info[servidor]['tocando_agora']
-            if nova_musica['title'] != embed.title:
-                embed.title = nova_musica['title']
-                embed.url = nova_musica['url']
-                embed.set_thumbnail(url=utils.get_thumbnail_url(nova_musica['url']))
-                embed.set_footer(text=nova_musica["artist"])
+            embed = discord.Embed(
+                title=musica_tocando['title'],
+                description=f"▶ {barra} `[{tempo_atual}/{duracao_total}]` 🔈",
+                url=musica_tocando['url'],
+                color=discord.Color.red()
+            )
+            embed.set_author(
+                name=f"{user.name}",
+                icon_url=avatar_url
+            )
+            embed.set_thumbnail(url=utils.get_thumbnail_url(musica_tocando['url']))
+            embed.set_footer(text=musica_tocando["artist"])
             
             # Atualize a descrição com o progresso atual
             embed.description = f"▶ {barra} `[{tempo_atual}/{duracao_total}]` 🔈"
+            
 
         # Edite a mensagem
-        await message.edit(embed=embed)
+        if message:
+            await message.edit(embed=embed)
+        else:
+            message = await ctx.send(embed=embed)
+        
+        # Verifique se a mensagem ainda está entre as 3 últimas
+        last_messages = [msg async for msg in ctx.channel.history(limit=10)]
+        if message not in last_messages:
+            break
 
         # Aguarde 5 segundos antes da próxima atualização
         await asyncio.sleep(5)
@@ -721,6 +730,51 @@ async def on_guild_remove(guild):
     print(f"Sai do servidor: {guild.name} (ID: {guild.id})")
     #IDEIA: mandar mesagem para o dono do servidor, talvez pedindo um feedbeck
 
+@bot.event
+async def on_command(ctx):
+    start_time = time.time()
+
+    # Coletar informações do contexto
+    command_name = ctx.command.name
+    user = ctx.author.name
+    user_id = ctx.author.id
+    server = ctx.guild.name if ctx.guild else "DM"
+    server_id = ctx.guild.id if ctx.guild else "DM"
+    channel = ctx.channel.name if ctx.guild else "DM"
+    channel_id = ctx.channel.id if ctx.guild else "DM"
+    args = ctx.message.content
+    latency = round(bot.latency * 1000, 2)  # Latência do bot em ms
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # Registrar no CSV
+    filename = f"logs/{datetime.now().strftime('%Y-%m-%d')}_commands.csv"
+    log_to_csv(filename, [timestamp, command_name, user, user_id, server, server_id,
+                          channel, channel_id, args, latency, None])
+
+    # Log adicional no console
+    logging.info(f"Comando: {command_name} | Usuário: {user} | Latência: {latency}ms")
+
+    # Tempo total de execução (caso precise usar futuramente)
+    execution_time = round((time.time() - start_time) * 1000, 2)
+    print(f"Comando '{command_name}' executado em {execution_time}ms")
+
+# Evento para capturar erros
+@bot.event
+async def on_command_error(ctx, error):
+    command_name = ctx.command.name if ctx.command else "Unknown"
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    server = ctx.guild.name if ctx.guild else "DM"
+    server_id = ctx.guild.id if ctx.guild else "DM"
+    channel = ctx.channel.name if ctx.guild else "DM"
+    channel_id = ctx.channel.id if ctx.guild else "DM"
+
+    # Registrar no CSV
+    filename = f"logs/{datetime.now().strftime('%Y-%m-%d')}_commands.csv"
+    log_to_csv(filename, [timestamp, command_name, ctx.author.name, ctx.author.id,
+                          server, server_id, channel, channel_id, ctx.message.content, None, str(error)])
+
+    # Log adicional no console
+    logging.error(f"Erro no comando: {command_name} - {error}")
 
 @bot.event
 async def on_ready():
