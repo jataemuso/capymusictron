@@ -149,7 +149,7 @@ async def gatekeeper():
                 server['indice_nao_baixado'] = idx_nao_baixado
                 search = fila_tudo[idx_nao_baixado]["title"]
                 ctx = server['ctx']
-                await reproduce(ctx, search=search, servidor=server)
+                await download_track(ctx, search=search, servidor=server)
                 await asyncio.sleep(0.001) # não remover, quebra o codigo
                 server_info[server_id]['fila_tudo'][idx_nao_baixado]["downloaded"] = True
                 server_info[server_id]['indice_nao_baixado'] = None
@@ -510,7 +510,7 @@ async def play(ctx, *, search: str = None):
         await mensagem.edit(content=f"{track["title"]} - {track["artist"]} adicionado à fila")
 
 
-async def reproduce(ctx, *, search: str, servidor):
+async def download_track(ctx, *, search: str, servidor):
     ydl_opts = {
         'format': 'bestaudio[ext=webp]/bestaudio',
         'outtmpl': 'downloads/%(title)s.%(ext)s',
