@@ -311,35 +311,33 @@ intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
 
-@bot.command(name='nowplaying', aliases=['tocandoagora', 'playingnow', 'agoratocando'])
+@bot.command(name='nowplaying', aliases=['tocandoagora', 'playingnow', 'agoratocando', 'np'])
 @require_ready()
 async def nowplaying(ctx):
     servidor, *_ = servidor_e_canal_usuario(ctx)
-    
     message = None
 
-    # Inicie o loop de atualização
-    while True:
-        
+    # Função para gerar o embed
+    async def generate_embed():
         if not server_info[servidor]["tocando_agora"]:
             barra = "🔘▬▬▬▬▬▬▬▬▬▬"
             tempo_atual = "00:00"
             duracao_total = "00:00"
             embed = discord.Embed(
-                description = f"⏸ {barra} `[{tempo_atual}/{duracao_total}]` 🔈",
-                title = "Nada está tocando",
-                url = "https://github.com/jataemuso",
+                description=f"⏸ {barra} `[{tempo_atual}/{duracao_total}]` 🔈",
+                title="Nada está tocando",
+                url="https://github.com/jataemuso",
                 color=discord.Color.red()
             )
-        
         else:
-
             tempo_atual, duracao_total = obter_tempo_musica(servidor)
             barra = utils.calcular_barra_progresso(tempo_atual, duracao_total, comprimento_barra=11)
             format_string = "%M:%S" if duracao_total < 3600 else "%H:%M:%S"
             tempo_atual = time.strftime(format_string, time.gmtime(tempo_atual))
             duracao_total = time.strftime(format_string, time.gmtime(duracao_total))
             musica_tocando = server_info[servidor]['tocando_agora']
+
+            # Busca informações do usuário que adicionou a música
             user = await bot.fetch_user(musica_tocando['added_by_id'])
             avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
 
@@ -349,30 +347,58 @@ async def nowplaying(ctx):
                 url=musica_tocando['url'],
                 color=discord.Color.red()
             )
-            embed.set_author(
-                name=f"{user.name}",
-                icon_url=avatar_url
-            )
+            embed.set_author(name=f"{user.name}", icon_url=avatar_url)
             embed.set_thumbnail(url=utils.get_thumbnail_url(musica_tocando['url']))
             embed.set_footer(text=musica_tocando["artist"])
-            
-            # Atualize a descrição com o progresso atual
-            embed.description = f"▶ {barra} `[{tempo_atual}/{duracao_total}]` 🔈"
-            
+        return embed
 
-        # Edite a mensagem
-        if message:
+    # Enviar mensagem inicial com reações
+    embed = await generate_embed()
+    message = await ctx.send(embed=embed)
+    await message.add_reaction("⏮️")  # Voltar ao início
+    await message.add_reaction("⏯️")  # Play/Pause
+    await message.add_reaction("⏭️")  # Pular
+
+    # Função para lidar com reações
+    async def reaction_handler():
+        nonlocal message
+        while True:
+            try:
+                reaction, user = await bot.wait_for(
+                    "reaction_add",
+                    timeout=60.0,
+                    check=lambda r, u: u == ctx.author and r.message.id == message.id
+                )
+
+                if str(reaction.emoji) == "⏯️":  # Play/Pause
+                    if server_info[servidor].get('paused', False):
+                        await resume(ctx)
+                    else:
+                        await pause(ctx)
+                elif str(reaction.emoji) == "⏮️":  # Voltar ao início
+                    #TODO
+                    pass
+                elif str(reaction.emoji) == "⏭️":  # Pular
+                    await skip(ctx)
+
+                await message.remove_reaction(reaction.emoji, user)
+            except asyncio.TimeoutError:
+                await message.clear_reactions()
+                break
+
+    # Executar o handler de reações em paralelo
+    reaction_task = asyncio.create_task(reaction_handler())
+
+    # Loop de atualização do embed
+    try:
+        while True:
+            embed = await generate_embed()
             await message.edit(embed=embed)
-        else:
-            message = await ctx.send(embed=embed)
-        
-        # Verifique se a mensagem ainda está entre as 3 últimas
-        last_messages = [msg async for msg in ctx.channel.history(limit=10)]
-        if message not in last_messages:
-            break
-
-        # Aguarde 5 segundos antes da próxima atualização
-        await asyncio.sleep(5)
+            await asyncio.sleep(5)  # Atualizar a cada 5 segundos
+    except asyncio.CancelledError:
+        pass
+    finally:
+        reaction_task.cancel()
 
 
 @bot.command(name='resume')
@@ -594,6 +620,7 @@ async def show_queue(ctx, page: int = 1):
 
             await message.remove_reaction(reaction.emoji, user)
         except asyncio.TimeoutError:
+            await message.clear_reactions() 
             break
 
 
@@ -642,7 +669,8 @@ async def skip(ctx, forceskip=False, commandStop=False):
                 await message.remove_reaction(reaction,user) #Remove a reacao pra nao contabilizar mais de 1 voto
 
           except asyncio.TimeoutError:
-              break
+            await message.clear_reactions() 
+            break
 
 
         await message.edit(content=f"Votos: {len(server_info[guild_id]['skip'])} de {votos_necessarios}")
