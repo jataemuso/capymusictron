@@ -457,7 +457,7 @@ async def checkpermissao(ctx):
     else:
         await ctx.send("Você não tem permissões especiais.")
 
-@bot.command(name='play' , aliases=['tocar'])
+@bot.command(name='play' , aliases=['tocar', 'p'])
 @require_ready()
 async def play(ctx, *, search: str = None):
     user = ctx.author.name
@@ -828,44 +828,75 @@ async def help_command(ctx):
         title="Comandos:",
         color=discord.Color.blue()
     )
+    
+    def get_command_aliases(command_name):
+        command = bot.get_command(command_name)
+        if command:
+            aliases = [command.name] + command.aliases
+            return ", ".join(f"`{PREFIX}{alias}`" for alias in aliases)
+        return None
+
 
     comandos_usuarios = [
-        (f"`{PREFIX}play <música>`", "Adiciona uma música à fila."),
-        (f"`{PREFIX}radio`", "Cria uma rádio(autoplaylist) e adciona à fila."),
-        (f"`{PREFIX}queue`", "Exibe a fila de músicas."),
-        (f"`{PREFIX}nowplaying`", "Mostra a música que está tocando atualmente."),
-        (f"`{PREFIX}shuffle`", "Embaralha a fila de músicas."),
-        (f"`{PREFIX}remove <número>`", "Remove uma música específica da fila (se foi adicionada por você)."),
-        (f"`{PREFIX}help`", "Exibe esta mensagem de ajuda."),
-        (f"`{PREFIX}skip`", "Pula a música atual."),
+        ("play", "Adiciona uma música à fila."),
+        ("radio", "Cria uma rádio(autoplaylist) e adciona à fila."),
+        ("queue", "Exibe a fila de músicas."),
+        ("nowplaying", "Mostra a música que está tocando atualmente."),
+        ("shuffle", "Embaralha a fila de músicas."),
+        ("remove", "Remove uma música específica da fila (se foi adicionada por você)."),
+        ("help", "Exibe esta mensagem de ajuda."),
+         ("skip", "Pula a música atual."),
     ]
 
     comandos_dj = [
-        (f"`{PREFIX}playnext <música>`", "Adiciona uma música para ser tocada a seguir."),
-        (f"`{PREFIX}stop`", "Para a música atual e limpa a fila."),
-        (f"`{PREFIX}clear`", "Limpa a fila de músicas."),
-        (f"`{PREFIX}forceskip`", "Força a música atual a ser pulada."),
+         ("playnext", "Adiciona uma música para ser tocada a seguir."),
+        ("stop", "Para a música atual e limpa a fila."),
+        ("clear", "Limpa a fila de músicas."),
+        ("forceskip", "Força a música atual a ser pulada."),
     ]
 
     comandos_dono = [
-        (f"`{PREFIX}setdj <cargo>`", "Define um cargo como DJ."),
-        (f"`{PREFIX}removedj`", "Remove o cargo DJ."),
+       ("setdj", "Define um cargo como DJ."),
+        ("removedj", "Remove o cargo DJ."),
     ]
 
     comandos_dono_bot = [
     ]
 
     if perm >= 0:
-        embed.add_field(name="Music:", value="\n".join([f"{name} - {desc}" for name, desc in comandos_usuarios]), inline=False)
+        embed.add_field(
+            name="Music:",
+            value="\n".join(
+                f"{get_command_aliases(name)} - {desc}" for name, desc in comandos_usuarios if get_command_aliases(name)
+            ),
+            inline=False
+        )
     if perm >= 1:
-        embed.add_field(name="DJs:", value="\n".join([f"{name} - {desc}" for name, desc in comandos_dj]), inline=False)
+        embed.add_field(
+            name="DJs:",
+             value="\n".join(
+                f"{get_command_aliases(name)} - {desc}" for name, desc in comandos_dj if get_command_aliases(name)
+             ),
+            inline=False
+         )
     if perm >= 3:
-        embed.add_field(name="Admins:", value="\n".join([f"{name} - {desc}" for name, desc in comandos_dono]), inline=False)
+        embed.add_field(
+            name="Admins:",
+            value="\n".join(
+                f"{get_command_aliases(name)} - {desc}" for name, desc in comandos_dono if get_command_aliases(name)
+            ),
+            inline=False
+        )
     if perm >= 4:
-        embed.add_field(name="Bot owner:", value="\n".join([f"{name} - {desc}" for name, desc in comandos_dono_bot]), inline=False)
+        embed.add_field(
+            name="Bot owner:",
+            value="\n".join(
+                f"{get_command_aliases(name)} - {desc}" for name, desc in comandos_dono_bot if get_command_aliases(name)
+            ),
+            inline=False
+        )
 
     await ctx.send(embed=embed)
-
 
 
 @bot.event
