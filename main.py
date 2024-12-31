@@ -58,9 +58,9 @@ def log_to_csv(filename, data):
         writer.writerow(data)
 
 
-TOKEN = os.getenv("DISCORD_TOKEN")
-PREFIX = os.getenv("BOT_PREFIX")
-BOT_OWNER_ID = int(os.getenv("BOT_OWNER_ID"))
+TOKEN = "MTMxOTQwODM2OTQ4MzY0OTE4OQ.GI1PT2.WccwfNNVLRATtIu9GSxU9bEDGToNWW9_YGS2qk"
+PREFIX = "?"
+BOT_OWNER_ID = REMOVIDO
 FILA_TUDO = []
 DOWNLOADS_FOLDER = 'downloads'
 server_info = {}
@@ -600,9 +600,9 @@ async def show_queue(ctx, page: int = 1):
 @bot.command(name='skip' , aliases=['pular'])
 @require_ready()
 async def skip(ctx, forceskip=False, commandStop=False):
-    servidor_e_canal_usuario(ctx=ctx)
+    servidor, *_ = servidor_e_canal_usuario(ctx)
     guild_id = ctx.guild.id
-    user = ctx.author.name
+    user_id = ctx.author.id # Usaremos o ID do usuário
     tocando_agora = server_info[guild_id]['tocando_agora']
 
     if ctx.author.voice is None:
@@ -617,18 +617,39 @@ async def skip(ctx, forceskip=False, commandStop=False):
     ouvintes = [m for m in voice_channel.members if not m.bot]
     votos_necessarios = max(1, math.ceil(len(ouvintes) / 2))
 
-    if not (tocando_agora["added_by"] == user or forceskip or commandStop):
-
-        if user in server_info[guild_id]['skip']:
+    if not (tocando_agora["added_by_id"] == user_id or forceskip or commandStop):
+        if user_id in server_info[guild_id]['skip']:
             await ctx.send("Você não pode votar mais de uma vez.")
+            return
+        
+        server_info[guild_id]['skip'].add(user_id)
+        
+        # Mensagem com reação
+        message = await ctx.send(f"Voto registrado: {len(server_info[guild_id]['skip'])} de {votos_necessarios}. Reaja com ✅ para votar.")
+        await message.add_reaction("✅")
+        
+        # Função para verificar reações
+        def check(reaction, user):
+           return user != bot.user and str(reaction.emoji) == '✅' and reaction.message.id == message.id
+        
+        # Aguarda reações adicionais por 60 segundos
+        while len(server_info[guild_id]['skip']) < votos_necessarios:
+          try:
+                reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
+                if user.id not in server_info[guild_id]['skip']:
+                    server_info[guild_id]['skip'].add(user.id)
+                    await message.edit(content=f"Voto registrado: {len(server_info[guild_id]['skip'])} de {votos_necessarios}. Reaja com ✅ para votar.")
+                await message.remove_reaction(reaction,user) #Remove a reacao pra nao contabilizar mais de 1 voto
 
-        else:
-            server_info[guild_id]['skip'].add(user)
-            await ctx.send(f"Voto registrado: {len(server_info[guild_id]['skip'])} de {votos_necessarios}")
+          except asyncio.TimeoutError:
+              break
 
 
-    if tocando_agora["added_by"] == user or len(server_info[guild_id]['skip']) >= votos_necessarios or forceskip or commandStop:
-
+        await message.edit(content=f"Votos: {len(server_info[guild_id]['skip'])} de {votos_necessarios}")
+    
+    if tocando_agora["added_by_id"] == user_id or len(server_info[guild_id]['skip']) >= votos_necessarios or forceskip or commandStop:
+      
+      
         # Obtém o cliente de voz ativo
         voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
         
@@ -641,20 +662,6 @@ async def skip(ctx, forceskip=False, commandStop=False):
                 await ctx.send("Nenhum áudio está sendo reproduzido no momento.")
             
         server_info[guild_id]['skip'] = set()
-
-@bot.command(name='forceskip') #TODO
-@require_ready()
-async def forceskip(ctx):
-    servidor, voice_channel = servidor_e_canal_usuario(ctx)
-    if await permissao(ctx) < 1:
-        await ctx.send('Você não tem permissão de usar esse comando!')
-        return
-
-    if voice_channel is None:
-        await ctx.send("Você não pode usar esse comando fora de um canal de voz.")
-        return
-    
-    await skip(ctx, forceskip=True)
 
 @bot.command(name='clear', aliases=['limpar']) #TODO verificar permissões e atualizar filatudo
 @require_ready()
