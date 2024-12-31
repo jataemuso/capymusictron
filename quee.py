@@ -18,6 +18,7 @@ from datetime import datetime
 import subprocess
 import pandas as pd
 from dotenv import load_dotenv
+import math
 
 bot_ready = False
 
@@ -68,7 +69,7 @@ server_config = server_config_manager.load_servers()
 def add_server(server_id, owner=None, admins=None):
     """Adiciona um servidor ao dicionário server_info, se não estiver presente."""
     tempo_de_reproducao = 0
-    csv_path = f'logs\{datetime.now().strftime('%Y-%m-%d')}_commands.csv'
+    csv_path = f'logs\\{datetime.now().strftime('%Y-%m-%d')}_commands.csv'
     if os.path.exists(csv_path):
         data = pd.read_csv(csv_path)
         tempo_de_reproducao = int(data['tempo_de_reproducao_acumulado'].iloc[-1])
@@ -535,40 +536,66 @@ async def on_download_complete(d, ctx, servidor): #TODO
 
 
 
-@bot.command(name='queue' , aliases=['fila'])
+@bot.command(name='queue', aliases=['fila'])
 @require_ready()
-async def show_queue(ctx): 
+async def show_queue(ctx, page: int = 1):
     servidor, *_ = servidor_e_canal_usuario(ctx)
-    tocando_agora = server_info[servidor]['tocando_agora']
     fila_tudo = server_info[servidor]['fila_tudo']
 
     if len(fila_tudo) == 0:
         await ctx.send('A fila está vazia.')
         return
 
-    idx = 0
-    messages = []  # Lista para armazenar as mensagens divididas
-    current_message = 'Fila de músicas:\n'
+    total_pages = math.ceil(len(fila_tudo) / 5)
+    if page < 1 or page > total_pages:
+        await ctx.send(f"Página inválida! Escolha um número entre 1 e {total_pages}.")
+        return
 
-    if tocando_agora is not None:
-        current_message += f"Reproduzindo: {tocando_agora['real_title']}\n"
+    def generate_embed(page):
+        start_idx = (page - 1) * 5
+        end_idx = start_idx + 5
+        embed = discord.Embed(
+            title="Fila de músicas",
+            color=discord.Color.blue()
+        )
+        for idx, song in enumerate(fila_tudo[start_idx:end_idx], start=start_idx + 1):
+            embed.add_field(
+                name=f"{idx}. {song['title']}",
+                value=f"Adicionado por: {song['added_by']}",
+                inline=False
+            )
+        embed.set_footer(text=f"Página {page}/{total_pages}")
+        return embed
 
-    # Adiciona músicas da fila armazenada no arquivo
-    for song in fila_tudo:
-        line = f'{idx + 1}. {song["title"]}\n'
-        if len(current_message) + len(line) > 2000:
-            messages.append(current_message)
-            current_message = ''
-        current_message += line
-        idx += 1
+    current_page = page
+    message = await ctx.send(embed=generate_embed(current_page))
 
-    # Adiciona a última mensagem, caso exista conteúdo restante
-    if current_message:
-        messages.append(current_message)
+    if total_pages > 1:
+        await message.add_reaction("⬅️")
+        await message.add_reaction("➡️")
 
-    # Envia todas as partes da mensagem
-    for msg in messages:
-        await ctx.send(msg)
+    def check_reaction(reaction, user):
+        return (
+            user == ctx.author and
+            reaction.message.id == message.id and
+            str(reaction.emoji) in ["⬅️", "➡️"]
+        )
+
+    while True:
+        try:
+            reaction, user = await bot.wait_for("reaction_add", timeout=60.0, check=check_reaction)
+
+            if str(reaction.emoji) == "⬅️" and current_page > 1:
+                current_page -= 1
+                await message.edit(embed=generate_embed(current_page))
+            elif str(reaction.emoji) == "➡️" and current_page < total_pages:
+                current_page += 1
+                await message.edit(embed=generate_embed(current_page))
+
+            await message.remove_reaction(reaction.emoji, user)
+        except asyncio.TimeoutError:
+            break
+
 
 @bot.command(name='skip' , aliases=['pular'])
 @require_ready()
@@ -588,7 +615,7 @@ async def skip(ctx, forceskip=False, commandStop=False):
     
     voice_channel = ctx.guild.get_channel(tocando_agora["voice_channel_id"])
     ouvintes = [m for m in voice_channel.members if not m.bot]
-    votos_necessarios = max(1, len(ouvintes) // 2)
+    votos_necessarios = max(1, math.ceil(len(ouvintes) / 2))
 
     if not (tocando_agora["added_by"] == user or forceskip or commandStop):
 
@@ -769,6 +796,7 @@ async def help_command(ctx):
 
     comandos_usuarios = [
         (f"`{PREFIX}play <música>`", "Adiciona uma música à fila."),
+        (f"`{PREFIX}radio`", "Cria uma rádio(autoplaylist) e adciona à fila."),
         (f"`{PREFIX}queue`", "Exibe a fila de músicas."),
         (f"`{PREFIX}nowplaying`", "Mostra a música que está tocando atualmente."),
         (f"`{PREFIX}shuffle`", "Embaralha a fila de músicas."),
