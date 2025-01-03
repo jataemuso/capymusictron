@@ -159,17 +159,46 @@ async def gatekeeper():
             
             await asyncio.sleep(1) 
 
+async def verificar_canal_vazio(server_id):
+    server = server_info.get(server_id)
+    ctx = server["ctx"]
+    if not server or not server['tocando_agora']:
+        return  # Não está tocando nada, então não há necessidade de verificar
+
+    guild = bot.get_guild(server_id)
+    if guild:
+        voice_client = discord.utils.get(bot.voice_clients, guild=guild)
+    else:
+        return  # O servidor não foi encontrado
+
+    if (not voice_client) or (not voice_client.is_connected()):
+        return  # Bot não está conectado ao canal de voz
+
+    await asyncio.sleep(1)
+
+    canal = voice_client.channel
+    ouvintes = [m for m in canal.members if not m.bot]  # Filtra apenas usuários humanos
+
+    if not ouvintes:  # Se o canal estiver vazio
+        await asyncio.sleep(10)  # Espera 30 segundos
+        canal_atualizado = voice_client.channel  # Verifica novamente o canal
+        ouvintes_atualizados = [m for m in canal_atualizado.members if not m.bot]
+        if not ouvintes_atualizados:  # Ainda está vazio
+            await skip(ctx, commandStop=True)
+            await clear(ctx, commandStop=True)
+            print(f"Desconectei do canal {canal.name} porque está vazio.")
+
+
 async def gatekeeper_tocar():
     tasks = {}
 
     while True:
         for server_id, server in server_info.items():
             if server_id not in tasks or tasks[server_id].done():
-                # Inicia uma nova tarefa para o servidor, caso não exista ou esteja concluída
                 tasks[server_id] = asyncio.create_task(processar_fila_servidor(server_id))
-
-        # Aguarda um tempo antes de verificar novamente
+            bot.loop.create_task(verificar_canal_vazio(server_id))
         await asyncio.sleep(2)
+
 
 async def processar_fila_servidor(server_id):
     server = server_info[server_id]
@@ -632,7 +661,7 @@ async def skip(ctx, forceskip=False, commandStop=False):
     user_id = ctx.author.id # Usaremos o ID do usuário
     tocando_agora = server_info[guild_id]['tocando_agora']
 
-    if ctx.author.voice is None:
+    if (ctx.author.voice is None) and (not commandStop):
         await ctx.send("Você precisa estar em um canal de voz para usar skip.")
         return
     
@@ -694,9 +723,10 @@ async def skip(ctx, forceskip=False, commandStop=False):
 @bot.command(name='clear', aliases=['limpar']) #TODO verificar permissões e atualizar filatudo
 @require_ready()
 async def clear(ctx, commandStop=False):
-        if await permissao(ctx) < 1:
-            await ctx.send('Você não tem permissão de usar esse comando!')
-            return
+        if not commandStop:
+            if await permissao(ctx) < 1:
+                await ctx.send('Você não tem permissão de usar esse comando!')
+                return
         servidor, *_ = servidor_e_canal_usuario(ctx)
         server_info[servidor]['fila_tudo'] = []
         if not commandStop:
