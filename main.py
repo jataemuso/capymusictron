@@ -536,7 +536,20 @@ async def play(ctx, *, search: str = None):
             'playnext': False,
             'voice_channel_id': canal
         })
-        await mensagem.edit(content=f"{track["title"]} - {track["artist"]} adicionado à fila")
+
+        url_to_find = track["url"]  # A URL que você quer encontrar
+        server_info[servidor]["fila_tudo"] = fair_queue.order_list(server_info[servidor]["fila_tudo"])
+        # Iterar pela lista de filas
+        for index, item in enumerate(server_info[servidor]['fila_tudo']):
+            if item["url"] == url_to_find:
+                # A URL foi encontrada, a posição é `index`
+                print(f"A URL foi encontrada na posição {index}")
+                await mensagem.edit(content=f"{track['title']} - {track['artist']} adicionado à fila na posição {index + 1}")
+                break
+        else:
+            # A URL não foi encontrada na fila
+            await mensagem.edit(content="Algo deu errado :(")
+            print("A URL não foi encontrada na fila.")
 
 
 async def download_track(ctx, *, search: str, servidor):
