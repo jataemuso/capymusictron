@@ -58,9 +58,10 @@ def log_to_csv(filename, data):
         writer.writerow(data)
 
 
-TOKEN = "MTMxOTQwODM2OTQ4MzY0OTE4OQ.GI1PT2.WccwfNNVLRATtIu9GSxU9bEDGToNWW9_YGS2qk"
-PREFIX = "?"
-BOT_OWNER_ID = REMOVIDO
+load_dotenv()
+TOKEN = os.getenv("TOKEN")
+PREFIX = "!"
+BOT_OWNER_ID = os.getenv("BOT_OWNER_ID")
 FILA_TUDO = []
 DOWNLOADS_FOLDER = 'downloads'
 server_info = {}
@@ -147,7 +148,7 @@ async def gatekeeper():
 
             if idx_nao_baixado is not None:
                 server['indice_nao_baixado'] = idx_nao_baixado
-                search = fila_tudo[idx_nao_baixado]["title"]
+                search = fila_tudo[idx_nao_baixado]["url"]
                 ctx = server['ctx']
                 await download_track(ctx, search=search, servidor=server)
                 await asyncio.sleep(0.001) # não remover, quebra o codigo
@@ -665,6 +666,11 @@ async def show_queue(ctx, page: int = 1):
             await message.clear_reactions() 
             break
 
+@bot.command(name='forceskip' , aliases=['skipforce'])
+@require_ready()
+async def forceskip(ctx, forceskip=False, commandStop=False):
+    if await permissao(ctx) > 0:
+        await skip(ctx, forceskip=True)
 
 @bot.command(name='skip' , aliases=['pular'])
 @require_ready()
@@ -1016,7 +1022,7 @@ async def on_ready():
             owner = await guild.fetch_member(guild.owner_id)
 
             # Força o carregamento de todos os membros da guilda
-            await guild.chunk()  # Isso vai garantir que todos os membros sejam carregados
+           # await guild.chunk()  # Isso vai garantir que todos os membros sejam carregados
 
             # Pega todos os administradores (membros com cargos de admin)
             admins = []
